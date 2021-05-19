@@ -1,0 +1,7 @@
+{
+  "name": "raytracer-cr",
+  "description": "Port of omegga-raytracer using omegga-cr.",
+  "author": "x",
+  "config": {},
+  "commands": []
+}

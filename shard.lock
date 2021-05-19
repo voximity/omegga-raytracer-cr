@@ -1,0 +1,6 @@
+version: 2.0
+shards:
+  omegga-cr:
+    git: https://github.com/voximity/omegga-cr.git
+    version: 0.1.0+git.commit.8d9dbbb97fda359082e92dbd1f32f214ed38e881
+

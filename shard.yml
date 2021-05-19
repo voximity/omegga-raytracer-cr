@@ -1,0 +1,17 @@
+name: omegga-raytracer-cr
+version: 0.1.0
+
+authors:
+  - Zander <zander@zanderf.net>
+
+targets:
+  omegga-raytracer-cr:
+    main: src/omegga-raytracer-cr.cr
+
+dependencies:
+  omegga-cr:
+    github: voximity/omegga-cr
+
+crystal: 1.0.0
+
+license: MIT
