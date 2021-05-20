@@ -1,7 +1,9 @@
 # omegga-raytracer-cr
 
+![Sample render](https://i.imgur.com/9DRgc2P.png)
+
 Effectively a port of [omegga-raytracer](https://github.com/voximity/omegga-raytracer) using omegga-cr.
-This version, written in Crystal, is substantially faster.
+This version, written in Crystal, is substantially faster. It also has support for meshes, meaning it should be trivial to add new bricks like wedges, ramps, or even non-procedural bricks.
 
 ## Installation
 

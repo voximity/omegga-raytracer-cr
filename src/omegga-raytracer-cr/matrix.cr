@@ -39,7 +39,6 @@ struct Matrix
   def self.from_brick_orientation(pos : Vector3, o : BRS::Direction, r : BRS::Rotation) : self
     base = new(pos)
     
-    # todo: make this exhaustive
     case o
     in BRS::Direction::ZPositive
       base * Matrix.from_angles_xyz(0, 0, r.value * Math::PI / 2.0)
