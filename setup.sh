@@ -1,2 +1,2 @@
 #!/bin/bash
-shards install
+shards install --ignore-crystal-version

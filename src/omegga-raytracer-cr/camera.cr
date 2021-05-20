@@ -19,6 +19,6 @@ class Camera
     nx = x - @vw * 0.5
     ny = y - @vh * 0.5
     z = @vh * 0.5 * @chf
-    Vector3.new(z, nx, ny).normalize
+    Vector3.new(z, nx, -ny).normalize
   end
 end

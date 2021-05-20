@@ -28,6 +28,36 @@ struct Matrix
     new(0, 0, 0, right.x, right.y, right.z, up.x, up.y, up.z, -forward.x, -forward.y, -forward.z)
   end
 
+  def self.new(x : Float64, y : Float64, z : Float64) : self
+    new(x, y, z, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+  end
+
+  def self.new(v : Vector3) : self
+    new(v.x, v.y, v.z)
+  end
+
+  def self.from_brick_orientation(pos : Vector3, o : BRS::Direction, r : BRS::Rotation) : self
+    base = new(pos)
+    
+    # todo: make this exhaustive
+    case o
+    when BRS::Direction::ZPositive
+      base * Matrix.from_angles_xyz(0, 0, r.value * Math::PI / 2.0)
+    when BRS::Direction::ZNegative
+      base * Matrix.from_angles_xyz(0, Math::PI, r.value * Math::PI / 2.0)
+    when BRS::Direction::XPositive
+      base * Matrix.from_angles_xyz(Math::PI, Math::PI / 2.0, r.value * Math::PI / 2.0)
+    when BRS::Direction::XNegative
+      base * Matrix.from_angles_xyz(0, -Math::PI / 2.0, r.value * Math::PI / 2.0)
+    when BRS::Direction::YPositive
+      base * Matrix.from_angles_xyz(0, 0, -Math::PI / 2.0) * Matrix.from_angles_xyz(0, -Math::PI / 2.0, r.value * Math::PI / 2.0)
+    when BRS::Direction::YNegative
+      base * Matrix.from_angles_xyz(0, 0, Math::PI / 2.0) * Matrix.from_angles_xyz(0, -Math::PI / 2.0, r.value * Math::PI / 2.0)
+    else
+      base * Matrix.new(0, 0, 500)
+    end
+  end
+
   def components : Array(Float64)
     [@m00, @m01, @m02, @x, @m10, @m11, @m12, @y, @m20, @m21, @m22, @z, 0, 0, 0, 1]
   end
@@ -54,5 +84,9 @@ struct Matrix
 
   def forward_vector : Vector3
     Vector3.new(-@m20, -@m21, -@m22)
+  end
+
+  def pos : Vector3
+    Vector3.new(@x, @y, @z)
   end
 end

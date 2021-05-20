@@ -11,6 +11,8 @@ targets:
 dependencies:
   omegga-cr:
     github: voximity/omegga-cr
+  stumpy_png:
+    github: stumpycr/stumpy_png
 
 crystal: 1.0.0
 

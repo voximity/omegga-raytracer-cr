@@ -1,3 +1,4 @@
 #!/bin/bash
 cd plugins/omegga-raytracer-cr
-shards update -q && shards build -q && ./bin/omegga-raytracer-cr
+shards update -q --ignore-crystal-version 1> /dev/null
+shards build -q && ./bin/omegga-raytracer-cr

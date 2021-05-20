@@ -20,7 +20,7 @@ class Scene
     # other fields can be changed as they are properties
   end
 
-  def populate_scene(save : BRS::Save)
+  def populate_scene(save : BRS::Save, omegga : RPCClient)
     @objects = [] of SceneObject
 
     save.bricks.each do |brick|
@@ -47,11 +47,26 @@ class Scene
 
       size = Vector3.new(nsx, nsy, nsz)
       color = brick.color.is_a?(Int32) ? Color.new(save.colors[brick.color.as(Int32)]) : Color.new(brick.color.as(Array(UInt8)))
-      @objects << AxisAlignedBoxObject.new(
-        pos, size, color,
-        reflectiveness: save.materials[brick.material_index] == "BMC_Metallic" ? 0.4 : 0.0,
-        transparency: save.materials[brick.material_index] == "BMC_Glass" ? 1.0 - (brick.material_intensity / 10.0) : 0.0 # todo: this should work with the glass material and material intensity
-      )
+      
+      material = save.materials[brick.material_index]
+      reflectiveness = material == "BMC_Metallic" ? 0.6 : 0.0
+      transparency = material == "BMC_Glass" ? 1.0 - (brick.material_intensity / 10.0) : 0.0
+      asset_name = save.brick_assets[brick.asset_name_index]
+
+      case asset_name
+      when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile", "PB_DefaultStudded"
+        @objects << AxisAlignedBoxObject.new(
+          pos, size, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      when "PB_DefaultMicroWedge"
+        @objects << WedgeObject.new(
+          Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      end
     end
 
     # todo: rendering players

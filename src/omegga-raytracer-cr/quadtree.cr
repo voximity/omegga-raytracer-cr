@@ -80,7 +80,7 @@ class Quadtree
     # merge if leaves are identical
     first_leaf = branch[0]
     leaves_equal = true
-    (1...3).each do |i|
+    (1..3).each do |i|
       next unless leaves_equal
       if first_leaf == branch[i]
         next
@@ -116,7 +116,7 @@ class Quadtree
 
         brick.asset_name_index = 0
         brick.size = BRS::Vector.new(1, leaf_size_units, leaf_size_units)
-        brick.position = BRS::Vector.new(base_pos.x, base_pos.y + 20 + pixel_pos[0] * 2 + leaf_size_units, base_pos.z + pixel_pos[1] * 2 + leaf_size_units)
+        brick.position = BRS::Vector.new(base_pos.x, base_pos.y + 20 + pixel_pos[0] * 2 + leaf_size_units, base_pos.z + @ih * 2 - (pixel_pos[1] * 2 + leaf_size_units))
         brick.color = branch[i].as(Color).to_a
 
         bricks << brick
