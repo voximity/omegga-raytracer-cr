@@ -13,12 +13,12 @@ class Scene
   property camera : Camera
   property objects = [] of SceneObject
   property diffuse_coefficient = 1.0
-  property ambient_coefficient = 0.4
+  property ambient_coefficient = 0.6
   property atmosphere_color = Color.new(206, 225, 245)
   property light_vector : Vector3 = -Vector3.new(-0.8, -0.5, -1.0).normalize
   property light_color = Color.new(255, 255, 255)
   property cast_shadows = true
-  property shadow_coefficient = 0.5
+  property shadow_coefficient = 0.6
   property max_reflection_depth = 8
   property render_players = true
   property render_ground_plane = true
@@ -95,6 +95,10 @@ class Scene
       reflectiveness = material == "BMC_Metallic" ? 0.4 : 0.0
       transparency = material == "BMC_Glass" ? 1.0 - (brick.material_intensity / 10.0) : 0.0
       asset_name = save.brick_assets[brick.asset_name_index]
+
+      if asset_name == "PB_DefaultStudded" && (nsx != nsy || nsy != nsz)
+        asset_name = "PB_DefaultBrick"
+      end
 
       case asset_name
       when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
