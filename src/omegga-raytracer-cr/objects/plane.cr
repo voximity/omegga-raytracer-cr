@@ -14,4 +14,11 @@ class PlaneObject < SceneObject
     end
     nil
   end
+
+  def internal_raycast(ray : Ray) : NamedTuple(t: Float64, normal: Vector3)?
+    hit = intersection_with_ray(ray)
+    return nil if hit.nil?
+
+    {t: hit.far, normal: hit.normal}
+  end
 end

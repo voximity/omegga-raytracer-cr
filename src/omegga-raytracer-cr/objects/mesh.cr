@@ -1,5 +1,5 @@
 struct Triangle
-  EPSILON = 0.000001
+  EPSILON = 0.000000001
 
   getter v0 : Vector3
   getter v1 : Vector3
@@ -33,45 +33,6 @@ struct Triangle
     return t if t > EPSILON
     nil
   end
-
-  def ray_intersection_old(ray : Ray) : Float64?
-    # step 1: finding P
-    ndrd = @normal.dot(ray.direction)
-    return nil if ndrd.abs < EPSILON
-
-    # compute d using equation 2
-    d = @normal.dot(@v0)
-
-    # compute t
-    t = (@normal.dot(ray.origin) + d) / ndrd
-    return nil if t < 0
-
-    # compute the intersection point
-    p = ray.point_along(t)
-
-    # step 2: inside outside test
-    c : Vector3
-
-    # edge 0
-    edge0 = @v1 - @v0
-    vp0 = p - @v0
-    c = edge0.cross(vp0)
-    return nil if @normal.dot(c) < 0
-
-    # edge 1
-    edge1 = @v2 - @v1
-    vp1 = p - @v1
-    c = edge1.cross(vp1)
-    return nil if @normal.dot(c) < 0
-
-    # edge 2
-    edge2 = @v0 - @v2
-    vp2 = p - v2
-    c = edge2.cross(vp2)
-    return nil if @normal.dot(c) < 0
-
-    t
-  end
 end
 
 # A SceneObject representing a collection of Triangles.
@@ -103,5 +64,23 @@ class MeshObject < SceneObject
 
     # return a hit including the t's of the nearest and next nearest tris (concave shapes should only return the first two hits, any past hits are ignored)
     return Hit.new(hits[0][:t], hits[1][:t], hits[0][:tri].normal)
+  end
+
+  def internal_raycast(ray : Ray) : NamedTuple(t: Float64, normal: Vector3)?
+    # run hits for all of the triangles
+    hits = [] of NamedTuple(tri: Triangle, t: Float64)
+    triangles.each do |tri|
+      t = tri.ray_intersection(ray)
+      next if t.nil?
+
+      hits << {tri: tri, t: t}
+    end
+
+    # sort the hits by their t
+    hits.sort! { |a, b| a[:t] <=> b[:t] }
+
+    # return nil if there was one or zero hits
+    return nil if hits.size < 2
+    {t: hits[1][:t], normal: hits[1][:tri].normal}
   end
 end

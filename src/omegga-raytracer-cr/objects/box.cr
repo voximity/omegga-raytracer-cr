@@ -28,4 +28,15 @@ class AxisAlignedBoxObject < SceneObject
     end
     Hit.new(tn, tf, normal)
   end
+
+  def internal_raycast(ray : Ray) : NamedTuple(t: Float64, normal: Vector3)?
+    hit1 = intersection_with_ray(ray)
+    return nil if hit1.nil?
+
+    new_ray = Ray.new(ray.point_along(hit1.far + 0.001), -ray.direction)
+    hit2 = intersection_with_ray(new_ray)
+    return nil if hit2.nil?
+
+    {t: hit1.far, normal: hit1.normal}
+  end
 end

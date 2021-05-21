@@ -27,4 +27,8 @@ class CylinderObject < SceneObject
     return Hit.new(t, t, ba * (y == 0 ? 0 : (y > 0 ? 1 : -1)) * (1 / baba)) if (k1 + k2 * t).abs < h
     nil
   end
+
+  def internal_raycast(ray : Ray) : NamedTuple(t: Float64, normal: Vector3)?
+    nil # this cylinder implementation is cringe and doesn't return a tfar
+  end
 end

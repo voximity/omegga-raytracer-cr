@@ -1,6 +1,13 @@
 class Scene
+  EPSILON = 0.00001
+
   def self.lerp(a : Float64, b : Float64, c : Float64) : Float64
     a + (b - a) * c
+  end
+
+  def self.remap(x : Float64, fmin : Float64, fmax : Float64, tmin : Float64, tmax : Float64) : Float64
+    d = (x - fmin) / (fmax - fmin)
+    tmin + (tmax - tmin) * d
   end
 
   property camera : Camera
@@ -18,6 +25,29 @@ class Scene
 
   def initialize(@camera)
     # other fields can be changed as they are properties
+  end
+
+  def refraction_vector(in_ray : Ray, normal : Vector3, from_ior : Float64, to_ior : Float64) : Vector3?
+    n = from_ior / to_ior
+    cos_i = -normal.dot(-in_ray.direction)
+    sin_t2 = n * n * (1.0 - cos_i * cos_i)
+    return nil if sin_t2 > 1.0
+    cos_t = Math.sqrt(1.0 - sin_t2)
+    in_ray.direction * n + normal * (n * cos_i - cos_t)
+  end
+
+  def refract(in_ray : Ray, hit : Hit, obj : SceneObject, from_ior : Float64, to_ior : Float64) : Ray?
+    ref_vec = refraction_vector(in_ray, hit.normal, from_ior, to_ior)
+    hitp_out = in_ray.point_along(hit.near - EPSILON)
+    hitp_in = in_ray.point_along(hit.near + EPSILON)
+    return Ray.new(hitp_in, in_ray.direction) if ref_vec.nil?
+    internal_ray = Ray.new(hitp_in, ref_vec)
+    internal_hit = obj.internal_raycast(Ray.new(hitp_out, ref_vec))
+    return Ray.new(hitp_in, in_ray.direction) if internal_hit.nil?
+    out_ref_vec = refraction_vector(Ray.new(hitp_in, ref_vec), -internal_hit[:normal], to_ior, from_ior)
+    hitp2 = internal_ray.point_along(internal_hit[:t])
+    return Ray.new(hitp_in, in_ray.direction) if out_ref_vec.nil?
+    Ray.new(hitp2, out_ref_vec)
   end
 
   def populate_scene(save : BRS::Save, omegga : RPCClient)
@@ -49,23 +79,55 @@ class Scene
       color = brick.color.is_a?(Int32) ? Color.new(save.colors[brick.color.as(Int32)]) : Color.new(brick.color.as(Array(UInt8)))
       
       material = save.materials[brick.material_index]
-      reflectiveness = material == "BMC_Metallic" ? 0.6 : 0.0
+      reflectiveness = material == "BMC_Metallic" ? 0.4 : 0.0
       transparency = material == "BMC_Glass" ? 1.0 - (brick.material_intensity / 10.0) : 0.0
       asset_name = save.brick_assets[brick.asset_name_index]
 
       case asset_name
-      when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile", "PB_DefaultStudded"
+      when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
         @objects << AxisAlignedBoxObject.new(
           pos, size, color,
           reflectiveness: reflectiveness,
           transparency: transparency
         )
-      when "PB_DefaultMicroWedge"
-        @objects << WedgeObject.new(
-          Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+      when "PB_DefaultStudded"
+        @objects << SphereObject.new(
+          pos, Math.max(size.x, Math.max(size.y, size.z)), color,
           reflectiveness: reflectiveness,
           transparency: transparency
         )
+      when "PB_DefaultMicroWedge"
+        @objects << WedgeObject.new(
+          WedgeObject.wedge_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      when "PB_DefaultMicroWedgeTriangleCorner"
+        @objects << WedgeObject.new(
+          WedgeObject.wedge_triangle_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      when "PB_DefaultMicroWedgeOuterCorner"
+        @objects << WedgeObject.new(
+          WedgeObject.wedge_outer_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      when "PB_DefaultMicroWedgeInnerCorner"
+        @objects << WedgeObject.new(
+          WedgeObject.wedge_inner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      when "PB_DefaultMicroWedgeCorner"
+        @objects << WedgeObject.new(
+          WedgeObject.wedge_corner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+          reflectiveness: reflectiveness,
+          transparency: transparency
+        )
+      else
+        omegga.broadcast asset_name
       end
     end
 
@@ -93,18 +155,37 @@ class Scene
     coeff = Scene.lerp(@diffuse_coefficient, @ambient_coefficient, Math.min(@light_vector.angle_between(hit[:hit].normal) / Math::PI * 0.5, 1.0))
     color = hit[:object].color.srgb * coeff
 
-    # transparency calculation
-    if hit[:object].transparency > 0.1 && hit[:object].reflectiveness < 0.1
-      continuing = Ray.new(ray.point_along(hit[:hit].far + 0.01), ray.direction)
-      continuing_color = get_ray_color(continuing, reflection_depth)
-      color = color.lerp(continuing_color, hit[:object].transparency)
-    end
-
     # shadow calculation
     if @cast_shadows
       shadow_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), @light_vector)
       shadow_hit = cast_ray(shadow_ray, @objects)
-      color = color * @shadow_coefficient unless shadow_hit.nil?
+      color = color * Scene.lerp(@shadow_coefficient, 1, shadow_hit[:object].transparency) unless shadow_hit.nil?
+    end
+
+    # refraction calculation (IOR for transparent materials is assumed to be 1.45)
+    if hit[:object].transparency > 0.1 && hit[:object].reflectiveness < 0.1
+      #continuing = Ray.new(ray.point_along(hit[:hit].far + 0.01), ray.direction)
+      #continuing_color = get_ray_color(continuing, reflection_depth)
+      #color = color.lerp(continuing_color, hit[:object].transparency)
+
+      to_ior = 1.33
+      from_ior = 1.0
+      ray_out = refract(ray, hit[:hit], hit[:object], from_ior, to_ior)
+      unless ray_out.nil?
+        reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * EPSILON), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
+        reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
+
+        # calculate how much of both we want
+        # 0 is full refraction
+        # 1 is full reflection
+        rr_amount = (-ray.direction).angle_between(hit[:hit].normal) / (Math::PI * 0.45)
+        rr_amount = Scene.remap(rr_amount * rr_amount, 0.0, 1.0, 0.2, 1.0)
+
+        continuing_color = get_ray_color(ray_out, reflection_depth)
+        #color = color.lerp(continuing_color, lerp(hit[:object].transparency)
+        mixed_color = continuing_color.lerp(reflection_hit_color, rr_amount.clamp(0.0, 1.0))
+        color = color.lerp(mixed_color, hit[:object].transparency)
+      end
     end
 
     # reflection calculation

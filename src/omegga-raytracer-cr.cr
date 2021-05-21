@@ -7,6 +7,7 @@ require "./omegga-raytracer-cr/objects/box"
 require "./omegga-raytracer-cr/objects/cylinder"
 require "./omegga-raytracer-cr/objects/mesh"
 require "./omegga-raytracer-cr/objects/plane"
+require "./omegga-raytracer-cr/objects/sphere"
 require "./omegga-raytracer-cr/objects/wedge"
 
 require "./omegga-raytracer-cr/camera"
