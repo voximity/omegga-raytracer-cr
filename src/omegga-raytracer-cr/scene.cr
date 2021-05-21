@@ -16,18 +16,27 @@ class Scene
   property ambient_coefficient = 0.4
   property atmosphere_color = Color.new(206, 225, 245)
   property light_vector : Vector3 = -Vector3.new(-0.8, -0.5, -1.0).normalize
+  property light_color = Color.new(255, 255, 255)
   property cast_shadows = true
   property shadow_coefficient = 0.5
   property max_reflection_depth = 8
   property render_players = true
   property render_ground_plane = true
   property ground_plane_color = Color.new(92, 148, 84)
+  property do_refraction = true
+  property stud_texture = true
+  property do_fog = true
+  property fog_color = Color.new(206, 225, 245)
+  property fog_density = 0.00007
+  property do_specular = true
+  property specular_pow = 32
+  property specular_strength = 0.4
 
   def initialize(@camera)
     # other fields can be changed as they are properties
   end
 
-  def refraction_vector(in_ray : Ray, normal : Vector3, from_ior : Float64, to_ior : Float64) : Vector3?
+  def self.refraction_vector(in_ray : Ray, normal : Vector3, from_ior : Float64, to_ior : Float64) : Vector3?
     n = from_ior / to_ior
     cos_i = -normal.dot(-in_ray.direction)
     sin_t2 = n * n * (1.0 - cos_i * cos_i)
@@ -36,18 +45,22 @@ class Scene
     in_ray.direction * n + normal * (n * cos_i - cos_t)
   end
 
-  def refract(in_ray : Ray, hit : Hit, obj : SceneObject, from_ior : Float64, to_ior : Float64) : Ray?
-    ref_vec = refraction_vector(in_ray, hit.normal, from_ior, to_ior)
+  def self.refract(in_ray : Ray, hit : Hit, obj : SceneObject, from_ior : Float64, to_ior : Float64) : Ray?
+    ref_vec = Scene.refraction_vector(in_ray, hit.normal, from_ior, to_ior)
     hitp_out = in_ray.point_along(hit.near - EPSILON)
     hitp_in = in_ray.point_along(hit.near + EPSILON)
-    return Ray.new(hitp_in, in_ray.direction) if ref_vec.nil?
+    return Ray.new(in_ray.point_along(hit.far + EPSILON), in_ray.direction) if ref_vec.nil?
     internal_ray = Ray.new(hitp_in, ref_vec)
     internal_hit = obj.internal_raycast(Ray.new(hitp_out, ref_vec))
-    return Ray.new(hitp_in, in_ray.direction) if internal_hit.nil?
-    out_ref_vec = refraction_vector(Ray.new(hitp_in, ref_vec), -internal_hit[:normal], to_ior, from_ior)
+    return Ray.new(in_ray.point_along(hit.far + EPSILON), in_ray.direction) if internal_hit.nil?
+    out_ref_vec = Scene.refraction_vector(Ray.new(hitp_in, ref_vec), -internal_hit[:normal], to_ior, from_ior)
     hitp2 = internal_ray.point_along(internal_hit[:t])
-    return Ray.new(hitp_in, in_ray.direction) if out_ref_vec.nil?
+    return Ray.new(in_ray.point_along(hit.far + EPSILON), in_ray.direction) if out_ref_vec.nil?
     Ray.new(hitp2, out_ref_vec)
+  end
+
+  def self.reflect(incidence : Vector3, normal : Vector3) : Vector3
+    incidence - normal * (2 * incidence.dot(normal))
   end
 
   def populate_scene(save : BRS::Save, omegga : RPCClient)
@@ -133,7 +146,7 @@ class Scene
 
     # todo: rendering players
 
-    @objects << PlaneObject.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), @ground_plane_color) if @render_ground_plane
+    @objects << PlaneObject.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), @ground_plane_color.linear, render_texture: @stud_texture) if @render_ground_plane
   end
 
   def cast_ray(ray : Ray, objs : Array(SceneObject)) : NamedTuple(object: SceneObject, hit: Hit)?
@@ -152,39 +165,67 @@ class Scene
     hit = cast_ray(ray, @objects)
     return @atmosphere_color if hit.nil?
 
-    coeff = Scene.lerp(@diffuse_coefficient, @ambient_coefficient, Math.min(@light_vector.angle_between(hit[:hit].normal) / Math::PI * 0.5, 1.0))
-    color = hit[:object].color.srgb * coeff
+    color = hit[:object].color.srgb
 
-    # shadow calculation
-    if @cast_shadows
-      shadow_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), @light_vector)
-      shadow_hit = cast_ray(shadow_ray, @objects)
-      color = color * Scene.lerp(@shadow_coefficient, 1, shadow_hit[:object].transparency) unless shadow_hit.nil?
+    unless @do_specular
+      coeff = Scene.lerp(@diffuse_coefficient, @ambient_coefficient, Math.min(@light_vector.angle_between(hit[:hit].normal) / Math::PI * 0.5, 1.0))
+      color = hit[:object].color.srgb * coeff
+    end
+
+    # phong lighting
+    if @do_specular
+      colv = color.to_v3
+      lightv = @light_color.to_v3
+
+      ambient = lightv * @ambient_coefficient
+      diff = Math.max(hit[:hit].normal.dot(@light_vector), 0.0)
+
+      view_dir = ray.direction
+      reflect_dir = Scene.reflect(@light_vector, hit[:hit].normal)
+      spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** @specular_pow
+
+      if @cast_shadows
+        shadow_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), @light_vector)
+        shadow_hit = cast_ray(shadow_ray, @objects)
+        unless shadow_hit.nil?
+          sd_amount = Scene.remap(shadow_hit[:object].transparency, 0, 1, @shadow_coefficient, 1)
+          spec *= sd_amount
+          diff *= sd_amount
+        end
+      end
+
+      diffuse = lightv * diff
+      specular = lightv * (spec * @specular_strength)
+      final = colv * (ambient + diffuse + specular)
+
+      color = Color.new((ambient + diffuse + specular) * colv)
     end
 
     # refraction calculation (IOR for transparent materials is assumed to be 1.45)
     if hit[:object].transparency > 0.1 && hit[:object].reflectiveness < 0.1
-      #continuing = Ray.new(ray.point_along(hit[:hit].far + 0.01), ray.direction)
-      #continuing_color = get_ray_color(continuing, reflection_depth)
-      #color = color.lerp(continuing_color, hit[:object].transparency)
+      unless @do_refraction
+        continuing = Ray.new(ray.point_along(hit[:hit].far + 0.01), ray.direction)
+        continuing_color = get_ray_color(continuing, reflection_depth)
+        color = color.lerp(continuing_color, hit[:object].transparency)
+      else
+        to_ior = 1.33
+        from_ior = 1.0
+        ray_out = Scene.refract(ray, hit[:hit], hit[:object], from_ior, to_ior)
+        unless ray_out.nil?
+          reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * EPSILON), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
+          reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
 
-      to_ior = 1.33
-      from_ior = 1.0
-      ray_out = refract(ray, hit[:hit], hit[:object], from_ior, to_ior)
-      unless ray_out.nil?
-        reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * EPSILON), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
-        reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
+          # calculate how much of both we want
+          # 0 is full refraction
+          # 1 is full reflection
+          rr_amount = (-ray.direction).angle_between(hit[:hit].normal) / (Math::PI * 0.45)
+          rr_amount = Scene.remap(rr_amount * rr_amount, 0.0, 1.0, 0.2, 1.0)
 
-        # calculate how much of both we want
-        # 0 is full refraction
-        # 1 is full reflection
-        rr_amount = (-ray.direction).angle_between(hit[:hit].normal) / (Math::PI * 0.45)
-        rr_amount = Scene.remap(rr_amount * rr_amount, 0.0, 1.0, 0.2, 1.0)
-
-        continuing_color = get_ray_color(ray_out, reflection_depth)
-        #color = color.lerp(continuing_color, lerp(hit[:object].transparency)
-        mixed_color = continuing_color.lerp(reflection_hit_color, rr_amount.clamp(0.0, 1.0))
-        color = color.lerp(mixed_color, hit[:object].transparency)
+          continuing_color = get_ray_color(ray_out, reflection_depth)
+          #color = color.lerp(continuing_color, lerp(hit[:object].transparency)
+          mixed_color = continuing_color.lerp(reflection_hit_color, rr_amount.clamp(0.0, 1.0))
+          color = color.lerp(mixed_color, hit[:object].transparency)
+        end
       end
     end
 
@@ -193,6 +234,12 @@ class Scene
       reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
       reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
       color = color.lerp(reflection_hit_color, hit[:object].reflectiveness)
+    end
+
+    # fog
+    if do_fog
+      fog_amount = hit[:hit].near * fog_density
+      color = color.lerp(fog_color, Math.min(1.0, fog_amount))
     end
 
     color

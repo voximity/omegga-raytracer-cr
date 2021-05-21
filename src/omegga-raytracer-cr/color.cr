@@ -20,6 +20,11 @@ struct Color
     new(arr[0], arr[1], arr[2])
   end
 
+  def self.new(vec : Vector3) : self
+    rg = (0.0..1.0)
+    new((vec.x.clamp(rg) * 255).to_u8, (vec.y.clamp(rg) * 255).to_u8, (vec.z.clamp(rg) * 255).to_u8)
+  end
+
   def rf : Float64
     @r.to_f64
   end
@@ -30,6 +35,10 @@ struct Color
 
   def bf : Float64
     @b.to_f64
+  end
+
+  def to_v3
+    Vector3.new(@r.to_f64 / 255.0, @g.to_f64 / 255.0, @b.to_f64 / 255.0)
   end
 
   def lerp(other : Color, c : Float64) : self
