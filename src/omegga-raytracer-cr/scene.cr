@@ -12,10 +12,13 @@ class Scene
 
   property camera : Camera
   property objects = [] of SceneObject
+  property lights = [] of Light
+
   property diffuse_coefficient = 1.0
   property ambient_coefficient = 0.6
   property atmosphere_color = Color.new(206, 225, 245)
-  property light_vector : Vector3 = -Vector3.new(-0.8, -0.5, -1.0).normalize
+  property skybox : Skybox? = nil
+  property light_vector : Vector3 = Vector3.new(-0.6, -0.4, -0.8).normalize
   property light_color = Color.new(255, 255, 255)
   property cast_shadows = true
   property shadow_coefficient = 0.6
@@ -25,12 +28,13 @@ class Scene
   property ground_plane_color = Color.new(92, 148, 84)
   property do_refraction = true
   property stud_texture = true
-  property do_fog = true
+  property do_fog = false
   property fog_color = Color.new(206, 225, 245)
   property fog_density = 0.00007
   property do_specular = true
   property specular_pow = 32
   property specular_strength = 0.4
+  property do_sun = true
 
   def initialize(@camera)
     # other fields can be changed as they are properties
@@ -52,10 +56,10 @@ class Scene
     return Ray.new(in_ray.point_along(hit.far + EPSILON), in_ray.direction) if ref_vec.nil?
     internal_ray = Ray.new(hitp_in, ref_vec)
     internal_hit = obj.internal_raycast(Ray.new(hitp_out, ref_vec))
-    return Ray.new(in_ray.point_along(hit.far + EPSILON), in_ray.direction) if internal_hit.nil?
+    return Ray.new(hitp_in, in_ray.direction) if internal_hit.nil?
     out_ref_vec = Scene.refraction_vector(Ray.new(hitp_in, ref_vec), -internal_hit[:normal], to_ior, from_ior)
     hitp2 = internal_ray.point_along(internal_hit[:t])
-    return Ray.new(in_ray.point_along(hit.far + EPSILON), in_ray.direction) if out_ref_vec.nil?
+    return Ray.new(hitp_in, in_ray.direction) if out_ref_vec.nil?
     Ray.new(hitp2, out_ref_vec)
   end
 
@@ -63,8 +67,18 @@ class Scene
     incidence - normal * (2 * incidence.dot(normal))
   end
 
+  def self.random_unit : Vector3
+    Vector3.new(Random.rand * 2.0 - 1.0, Random.rand * 2.0 - 1.0, Random.rand * 2.0 - 1.0).normalize
+  end
+
+  def self.fuzz_reflect(incidence : Vector3, normal : Vector3, fuzz : Float64) : Vector3
+    (Scene.reflect(incidence, normal) + Scene.random_unit * fuzz).normalize
+  end
+
   def populate_scene(save : BRS::Save, omegga : RPCClient)
     @objects = [] of SceneObject
+    @lights = [] of Light
+    @lights << SunLight.new(@light_vector, @light_color, 1.0) if @do_sun
 
     save.bricks.each do |brick|
       pos = brick.position.to_v3
@@ -92,7 +106,7 @@ class Scene
       color = brick.color.is_a?(Int32) ? Color.new(save.colors[brick.color.as(Int32)]) : Color.new(brick.color.as(Array(UInt8)))
       
       material = save.materials[brick.material_index]
-      reflectiveness = material == "BMC_Metallic" ? 0.4 : 0.0
+      reflectiveness = material == "BMC_Metallic" ? (color == Color.new(255, 255, 255) ? 1.0 : 0.4) : 0.0
       transparency = material == "BMC_Glass" ? 1.0 - (brick.material_intensity / 10.0) : 0.0
       asset_name = save.brick_assets[brick.asset_name_index]
 
@@ -100,51 +114,79 @@ class Scene
         asset_name = "PB_DefaultBrick"
       end
 
-      case asset_name
-      when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
-        @objects << AxisAlignedBoxObject.new(
-          pos, size, color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      when "PB_DefaultStudded"
-        @objects << SphereObject.new(
-          pos, Math.max(size.x, Math.max(size.y, size.z)), color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      when "PB_DefaultMicroWedge"
-        @objects << WedgeObject.new(
-          WedgeObject.wedge_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      when "PB_DefaultMicroWedgeTriangleCorner"
-        @objects << WedgeObject.new(
-          WedgeObject.wedge_triangle_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      when "PB_DefaultMicroWedgeOuterCorner"
-        @objects << WedgeObject.new(
-          WedgeObject.wedge_outer_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      when "PB_DefaultMicroWedgeInnerCorner"
-        @objects << WedgeObject.new(
-          WedgeObject.wedge_inner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      when "PB_DefaultMicroWedgeCorner"
-        @objects << WedgeObject.new(
-          WedgeObject.wedge_corner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
-          reflectiveness: reflectiveness,
-          transparency: transparency
-        )
-      else
-        omegga.broadcast asset_name
+      if brick.visibility
+        case asset_name
+        when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
+          @objects << AxisAlignedBoxObject.new(
+            pos, size, color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        when "PB_DefaultStudded"
+          @objects << SphereObject.new(
+            pos, Math.max(size.x, Math.max(size.y, size.z)), color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        when "PB_DefaultMicroWedge"
+          @objects << WedgeObject.new(
+            WedgeObject.wedge_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        when "PB_DefaultMicroWedgeTriangleCorner"
+          @objects << WedgeObject.new(
+            WedgeObject.wedge_triangle_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        when "PB_DefaultMicroWedgeOuterCorner"
+          @objects << WedgeObject.new(
+            WedgeObject.wedge_outer_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        when "PB_DefaultMicroWedgeInnerCorner"
+          @objects << WedgeObject.new(
+            WedgeObject.wedge_inner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        when "PB_DefaultMicroWedgeCorner"
+          @objects << WedgeObject.new(
+            WedgeObject.wedge_corner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, color,
+            reflectiveness: reflectiveness,
+            transparency: transparency
+          )
+        else
+          omegga.broadcast "Unknown brick asset #{asset_name}"
+        end
+      end
+
+      # lights
+      if brick.components.has_key?("BCD_PointLight")
+        lcomp = brick.components["BCD_PointLight"]
+
+        color_raw = lcomp["Color"].as(Array(Int32 | Float64)).map &.to_i32
+        color = lcomp["bUseBrickColor"].as(Bool) ? color : Color.new(color_raw[0], color_raw[1], color_raw[2])
+        intensity = lcomp["Brightness"].as(Int32 | Float64).to_f64 / 100.0
+
+        @lights << PointLight.new(pos, color, intensity)
+      end
+
+      if brick.components.has_key?("BCD_SpotLight")
+        lcomp = brick.components["BCD_SpotLight"]
+
+        color_raw = lcomp["Color"].as(Array(Int32 | Float64)).map &.to_i32
+        color = lcomp["bUseBrickColor"].as(Bool) ? color : Color.new(color_raw[0], color_raw[1], color_raw[2])
+        intensity = lcomp["Brightness"].as(Int32 | Float64).to_f64 / 30.0
+        angle_inner = lcomp["InnerConeAngle"].as(Int32 | Float64).to_f64 * Math::PI / 180.0
+        angle_outer = lcomp["OuterConeAngle"].as(Int32 | Float64).to_f64 * Math::PI / 180.0
+        rotation = lcomp["Rotation"].as(Array(Int32 | Float64)).map { |n| n.to_f64 * Math::PI / 180.0 }
+        matrix = Matrix.from_brick_orientation(pos, brick.direction, brick.rotation) * Matrix.from_angles_xyz(0, -Math::PI / 2.0, 0) * Matrix.from_angles_zyx(0, -rotation[0], -rotation[1])
+        vec = matrix.forward_vector
+
+        @lights << SpotLight.new(pos, vec, angle_outer, angle_inner, color, intensity)
       end
     end
 
@@ -167,47 +209,95 @@ class Scene
 
   def get_ray_color(ray : Ray, reflection_depth : Int32 = 0) : Color
     hit = cast_ray(ray, @objects)
-    return @atmosphere_color if hit.nil?
+
+    if hit.nil?
+      return @skybox.not_nil!.vec_to_color(ray.direction) unless @skybox.nil?
+      return @atmosphere_color
+    end
 
     color = hit[:object].color.srgb
 
-    unless @do_specular
-      coeff = Scene.lerp(@diffuse_coefficient, @ambient_coefficient, Math.min(@light_vector.angle_between(hit[:hit].normal) / Math::PI * 0.5, 1.0))
-      color = hit[:object].color.srgb * coeff
-    end
+    #unless @do_specular
+    #  coeff = Scene.lerp(@diffuse_coefficient, @ambient_coefficient, Math.min(@light_vector.angle_between(hit[:hit].normal) / Math::PI * 0.5, 1.0))
+    #  color = hit[:object].color.srgb * coeff
+    #end
 
     # phong lighting
-    if @do_specular
-      colv = color.to_v3
-      lightv = @light_color.to_v3
+    #if @do_specular
+      #colv = color.to_v3
+      #lightv = @light_color.to_v3
 
-      ambient = lightv * @ambient_coefficient
-      diff = Math.max(hit[:hit].normal.dot(@light_vector), 0.0)
+      #ambient = lightv * @ambient_coefficient
+      #diff = Math.max(hit[:hit].normal.dot(@light_vector), 0.0)
 
+      #view_dir = ray.direction
+      #reflect_dir = Scene.reflect(@light_vector, hit[:hit].normal)
+      #spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** @specular_pow
+
+      #if @cast_shadows
+      #  shadow_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), @light_vector)
+      #  shadow_hit = cast_ray(shadow_ray, @objects)
+      #  unless shadow_hit.nil?
+      #    sd_amount = Scene.remap(shadow_hit[:object].transparency, 0, 1, @shadow_coefficient, 1)
+      #    spec *= sd_amount
+      #    diff *= sd_amount
+      #  end
+      #end
+
+      #diffuse = lightv * diff
+      #specular = lightv * (spec * @specular_strength)
+      #final = colv * (ambient + diffuse + specular)
+
+      #color = Color.new((ambient + diffuse + specular) * colv)
+    #end
+
+    # phong lighting for all lights
+    colv = color.to_v3
+    sun_col = @light_color.to_v3
+    ambient = sun_col * @ambient_coefficient
+    hit_pos = ray.point_along(hit[:hit].near)
+
+    sum_vecs = ambient
+    lights.each do |light|
+      lcol = light.color.to_v3
+      lvec = light.vec_to_light(hit_pos)
+      lint = light.intensity_at(hit_pos)
+
+      # diffuse
+      diff = Math.max(hit[:hit].normal.dot(lvec), 0.0)
+
+      # specular
       view_dir = ray.direction
-      reflect_dir = Scene.reflect(@light_vector, hit[:hit].normal)
-      spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** @specular_pow
+      reflect_dir = Scene.reflect(lvec, hit[:hit].normal)
+      spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** light.specular_power
 
-      if @cast_shadows
-        shadow_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), @light_vector)
-        shadow_hit = cast_ray(shadow_ray, @objects)
-        unless shadow_hit.nil?
-          sd_amount = Scene.remap(shadow_hit[:object].transparency, 0, 1, @shadow_coefficient, 1)
+      # shadows
+      shadow_ray = Ray.new(hit_pos + hit[:hit].normal * EPSILON, lvec)
+      shadow_hit = cast_ray(shadow_ray, @objects)
+
+      unless shadow_hit.nil?
+        shadowed = true
+        shadowed = false if light.is_a?(PositionLight) && shadow_hit[:hit].near > (light.position - hit_pos).magnitude
+
+        if shadowed
+          sd_amount = Scene.remap(shadow_hit[:object].transparency, 0, 1, light.is_a?(SunLight) ? @shadow_coefficient : 0.0, 1)
           spec *= sd_amount
           diff *= sd_amount
         end
       end
 
-      diffuse = lightv * diff
-      specular = lightv * (spec * @specular_strength)
-      final = colv * (ambient + diffuse + specular)
+      # color from diffuse/specular
+      diffuse = lcol * diff
+      specular = lcol * (spec * light.specular_strength)
 
-      color = Color.new((ambient + diffuse + specular) * colv)
+      sum_vecs += (diffuse + specular) * lint
     end
+
+    color = Color.new(sum_vecs * colv)
 
     # refraction calculation (IOR for transparent materials is assumed to be 1.45)
     if hit[:object].transparency > 0.1 && hit[:object].reflectiveness < 0.1
-      unless @do_refraction
+      if !@do_refraction || reflection_depth >= @max_reflection_depth
         continuing = Ray.new(ray.point_along(hit[:hit].far + 0.01), ray.direction)
         continuing_color = get_ray_color(continuing, reflection_depth)
         color = color.lerp(continuing_color, hit[:object].transparency)
@@ -225,7 +315,7 @@ class Scene
           rr_amount = (-ray.direction).angle_between(hit[:hit].normal) / (Math::PI * 0.45)
           rr_amount = Scene.remap(rr_amount * rr_amount, 0.0, 1.0, 0.2, 1.0)
 
-          continuing_color = get_ray_color(ray_out, reflection_depth)
+          continuing_color = get_ray_color(ray_out, reflection_depth + 1)
           #color = color.lerp(continuing_color, lerp(hit[:object].transparency)
           mixed_color = continuing_color.lerp(reflection_hit_color, rr_amount.clamp(0.0, 1.0))
           color = color.lerp(mixed_color, hit[:object].transparency)
@@ -235,7 +325,7 @@ class Scene
 
     # reflection calculation
     if reflection_depth < @max_reflection_depth && hit[:object].reflectiveness > 0.1
-      reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
+      reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + hit[:hit].normal * EPSILON, Scene.reflect(ray.direction, hit[:hit].normal))#Scene.fuzz_reflect(ray.direction, hit[:hit].normal, 0.1)) #Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * 0.01), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
       reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
       color = color.lerp(reflection_hit_color, hit[:object].reflectiveness)
     end

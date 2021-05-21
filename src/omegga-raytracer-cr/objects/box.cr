@@ -17,7 +17,7 @@ class AxisAlignedBoxObject < SceneObject
     t2 = ray.m * (-ro - (s * @size))
     tn = Math.max(Math.max(t1.x, t1.y), t1.z)
     tf = Math.min(Math.min(t2.x, t2.y), t2.z)
-    return nil if tn >= tf || tf < 0
+    return nil if tn > tf || tf < 0
     normal : Vector3
     if t1.x > t1.y && t1.x > t1.z
       normal = Vector3.new(s.x, 0.0, 0.0)
@@ -37,6 +37,6 @@ class AxisAlignedBoxObject < SceneObject
     hit2 = intersection_with_ray(new_ray)
     return nil if hit2.nil?
 
-    {t: hit1.far, normal: hit1.normal}
+    {t: hit1.far, normal: hit2.normal}
   end
 end

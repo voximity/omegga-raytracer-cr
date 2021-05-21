@@ -1,5 +1,6 @@
 class PlaneObject < SceneObject
   TEXTURE_INTENSITY = 0.3
+  MAX_TEXTURE_DISTANCE = 2500.0
 
   getter pos : Vector3
   getter normal : Vector3
@@ -9,7 +10,7 @@ class PlaneObject < SceneObject
     super(color, reflectiveness, transparency)
   end
 
-  def stud_texture_normal(hit : Vector3) : Vector3
+  def stud_texture_normal_raw(hit : Vector3) : Vector3
     xo = hit.x % 10.0 - 5.0
     yo = hit.y % 10.0 - 5.0
     xoa = xo.abs
@@ -35,11 +36,16 @@ class PlaneObject < SceneObject
     end
   end
 
+  def stud_texture_normal(ray : Ray, t : Float64) : Vector3
+    normal = stud_texture_normal_raw(ray.point_along(t))
+    normal.lerp(Vector3.new(0, 0, 1), Math.min(1.0, t / MAX_TEXTURE_DISTANCE))
+  end
+
   def intersection_with_ray(ray : Ray) : Hit?
     denom = @normal.dot(ray.direction)
     if denom.abs > 0.0001
       t = (@pos - ray.origin).dot(@normal) / denom
-      return Hit.new(t, t, @render_texture ? stud_texture_normal(ray.point_along(t)) : @normal) if t >= 0
+      return Hit.new(t, t, @render_texture ? stud_texture_normal(ray, t) : @normal) if t >= 0
     end
     nil
   end

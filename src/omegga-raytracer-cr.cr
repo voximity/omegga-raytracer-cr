@@ -1,6 +1,11 @@
 require "omegga-cr"
 require "stumpy_png"
 
+require "./omegga-raytracer-cr/lights/light"
+require "./omegga-raytracer-cr/lights/point"
+require "./omegga-raytracer-cr/lights/spot"
+require "./omegga-raytracer-cr/lights/sun"
+
 require "./omegga-raytracer-cr/objects/object"
 require "./omegga-raytracer-cr/objects/box"
 require "./omegga-raytracer-cr/objects/cylinder"
@@ -17,21 +22,24 @@ require "./omegga-raytracer-cr/obj"
 require "./omegga-raytracer-cr/quadtree"
 require "./omegga-raytracer-cr/ray"
 require "./omegga-raytracer-cr/scene"
+require "./omegga-raytracer-cr/skybox"
 
 include Omegga
 
 class Config
   property width : Int32 = 300
   property height : Int32 = 200
-  property fov : Int32 = 50
+  property fov : Int32 = 60
   property diffuse : Float64 = 1.0
-  property ambient : Float64 = 0.3
+  property ambient : Float64 = 0.4
   property light_vector : Vector3 = Vector3.new(-0.6, -0.4, -0.8).normalize
   property shadows : Bool = true
   property shadow : Float64 = 0.4
   property max_reflection_depth : Int32 = 3
   property render_players : Bool = true
   property render_ground_plane : Bool = true
+  property do_refraction = true
+  property do_sun = true
 
   def initialize
   end
@@ -39,6 +47,7 @@ end
 
 omegga = RPCClient.new
 config = Config.new
+skybox = Skybox.new("skybox.png")
 
 omegga.on_init do
   omegga.broadcast "Raytracer loaded."
@@ -111,6 +120,26 @@ omegga.on_chat_command "set" do |user, args|
     else
       omegga.broadcast "Invalid option for rendering ground plane."
     end
+  when "doRefraction", "do_refraction", "refraction"
+    if ["on", "true", "1"].includes? args[1]
+      config.do_refraction = true
+      omegga.broadcast "Refraction enabled."
+    elsif ["off", "false", "0"].includes? args[1]
+      config.do_refraction = false
+      omegga.broadcast "Refraction disabled."
+    else
+      omegga.broadcast "Invalid option for refraction."
+    end
+  when "doSun", "do_sun", "sun"
+    if ["on", "true", "1"].includes? args[1]
+      config.do_sun = true
+      omegga.broadcast "Sun enabled."
+    elsif ["off", "false", "0"].includes? args[1]
+      config.do_sun = false
+      omegga.broadcast "Sun disabled."
+    else
+      omegga.broadcast "Invalid option for sun."
+    end
   else
     omegga.broadcast "Invalid setting \"#{args[0]}\"."
   end
@@ -142,12 +171,15 @@ omegga.on_chat_command "trace" do |user, args|
     scene = Scene.new(cam)
     scene.diffuse_coefficient = config.diffuse
     scene.ambient_coefficient = config.ambient
-    scene.light_vector = -config.light_vector
+    scene.light_vector = config.light_vector
     scene.cast_shadows = config.shadows
     scene.shadow_coefficient = config.shadow
     scene.max_reflection_depth = config.max_reflection_depth
     scene.render_players = config.render_players
     scene.render_ground_plane = config.render_ground_plane
+    scene.skybox = skybox
+    scene.do_refraction = config.do_refraction
+    scene.do_sun = config.do_sun
 
     omegga.broadcast "Scene initialized. Populating scene objects..."
     scene.populate_scene save, omegga

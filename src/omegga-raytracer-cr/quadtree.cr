@@ -117,7 +117,7 @@ class Quadtree
         brick.asset_name_index = 0
         brick.size = BRS::Vector.new(1, leaf_size_units, leaf_size_units)
         brick.position = BRS::Vector.new(base_pos.x, base_pos.y + 20 + pixel_pos[0] * 2 + leaf_size_units, base_pos.z + @ih * 2 - (pixel_pos[1] * 2 + leaf_size_units))
-        brick.color = branch[i].as(Color).linear.to_a
+        brick.color = branch[i].as(Color).to_a
 
         bricks << brick
       end
