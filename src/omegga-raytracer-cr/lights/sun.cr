@@ -2,7 +2,7 @@ class SunLight < Light
   getter vector : Vector3
 
   def initialize(vector, color, intensity)
-    super(color, intensity)
+    super(color, intensity, specular_power: 32)
     @vector = vector.normalize
   end
 

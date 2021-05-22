@@ -164,7 +164,7 @@ class Scene
         angle_inner = lcomp["InnerConeAngle"].as(Int32 | Float64).to_f64 * Math::PI / 180.0
         angle_outer = lcomp["OuterConeAngle"].as(Int32 | Float64).to_f64 * Math::PI / 180.0
         rotation = lcomp["Rotation"].as(Array(Int32 | Float64)).map { |n| n.to_f64 * Math::PI / 180.0 }
-        matrix = Matrix.from_brick_orientation(pos, brick.direction, brick.rotation) * Matrix.from_angles_xyz(0, -Math::PI / 2.0, 0) * Matrix.from_angles_zyx(0, -rotation[0], -rotation[1])
+        matrix = Matrix.from_angles_xyz(0, -Math::PI / 2.0, 0) * Matrix.from_angles_zyx(0, -rotation[0], -rotation[1]) * Matrix.from_brick_orientation(Vector3.new(0, 0, 0), brick.direction, brick.rotation)
         vec = matrix.forward_vector
 
         @lights << SpotLight.new(pos, vec, angle_outer, angle_inner, color, intensity)
@@ -174,7 +174,7 @@ class Scene
     # todo: rendering players
 
     plane_material = Material.new(color: @ground_plane_color, texture: StudTexture.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), 0.3))
-    @objects << PlaneObject.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), plane_material, render_texture: @stud_texture) if @render_ground_plane
+    @objects << PlaneObject.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), plane_material) if @render_ground_plane
   end
 
   def cast_ray(ray : Ray, objs : Array(SceneObject)) : NamedTuple(object: SceneObject, hit: Hit)?
@@ -222,10 +222,15 @@ class Scene
       # diffuse
       diff = Math.max(hit[:hit].normal.dot(lvec), 0.0)
 
-      # specular
-      view_dir = ray.direction
-      reflect_dir = Scene.reflect(lvec, hit[:hit].normal)
-      spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** light.specular_power
+      # specular (phong)
+      #view_dir = ray.direction
+      #reflect_dir = Scene.reflect(lvec, hit[:hit].normal)
+      #spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** light.specular_power
+
+      # specular (blinn-phong)
+      view_dir = -ray.direction
+      halfway_dir = (lvec + view_dir).normalize
+      spec = Math.max(0.0, hit[:hit].normal.dot(halfway_dir)) ** light.specular_power
 
       # shadows
       shadow_ray = Ray.new(hit_pos + hit[:hit].normal * EPSILON, lvec)

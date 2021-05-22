@@ -16,9 +16,9 @@ require "./omegga-raytracer-cr/objects/sphere"
 require "./omegga-raytracer-cr/objects/wedge"
 
 require "./omegga-raytracer-cr/textures/texture"
+require "./omegga-raytracer-cr/textures/foil_texture"
 require "./omegga-raytracer-cr/textures/fuzz_texture"
 require "./omegga-raytracer-cr/textures/mixed"
-require "./omegga-raytracer-cr/textures/plastic_texture"
 require "./omegga-raytracer-cr/textures/stud_texture"
 
 require "./omegga-raytracer-cr/camera"
