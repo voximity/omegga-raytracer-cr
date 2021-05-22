@@ -217,12 +217,12 @@ class WedgeObject < MeshObject
   getter matrix : Matrix
   getter size : Vector3
 
-  def initialize(verts : Array(Vector3), @matrix, @size, color, reflectiveness = 0.0, transparency = 0.0)
+  def initialize(verts : Array(Vector3), @matrix, @size, material)
     tris = verts.in_groups_of(3).map do |tri_verts|
       verts = tri_verts.map { |v| WedgeObject.fix_point(v.not_nil!, @matrix, @size) }
       Triangle.new(verts[0], verts[1], verts[2])
     end
 
-    super(tris, color, reflectiveness, transparency)
+    super(tris, material)
   end
 end

@@ -6,8 +6,8 @@ class PlaneObject < SceneObject
   getter normal : Vector3
   getter render_texture : Bool
 
-  def initialize(@pos, @normal, color, @reflectiveness = 0.0, @transparency = 0.0, @render_texture = true)
-    super(color, reflectiveness, transparency)
+  def initialize(@pos, @normal, material, @render_texture = true)
+    super(material)
   end
 
   def stud_texture_normal_raw(hit : Vector3) : Vector3

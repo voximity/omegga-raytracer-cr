@@ -1,5 +1,6 @@
 require "omegga-cr"
 require "stumpy_png"
+require "open-simplex-noise"
 
 require "./omegga-raytracer-cr/lights/light"
 require "./omegga-raytracer-cr/lights/point"
@@ -14,9 +15,16 @@ require "./omegga-raytracer-cr/objects/plane"
 require "./omegga-raytracer-cr/objects/sphere"
 require "./omegga-raytracer-cr/objects/wedge"
 
+require "./omegga-raytracer-cr/textures/texture"
+require "./omegga-raytracer-cr/textures/fuzz_texture"
+require "./omegga-raytracer-cr/textures/mixed"
+require "./omegga-raytracer-cr/textures/plastic_texture"
+require "./omegga-raytracer-cr/textures/stud_texture"
+
 require "./omegga-raytracer-cr/camera"
 require "./omegga-raytracer-cr/color"
 require "./omegga-raytracer-cr/hit"
+require "./omegga-raytracer-cr/material"
 require "./omegga-raytracer-cr/matrix"
 require "./omegga-raytracer-cr/obj"
 require "./omegga-raytracer-cr/quadtree"
@@ -30,15 +38,12 @@ class Config
   property width : Int32 = 300
   property height : Int32 = 200
   property fov : Int32 = 60
-  property diffuse : Float64 = 1.0
   property ambient : Float64 = 0.4
   property light_vector : Vector3 = Vector3.new(-0.6, -0.4, -0.8).normalize
-  property shadows : Bool = true
   property shadow : Float64 = 0.4
   property max_reflection_depth : Int32 = 3
   property render_players : Bool = true
   property render_ground_plane : Bool = true
-  property do_refraction = true
   property do_sun = true
 
   def initialize
@@ -72,9 +77,6 @@ omegga.on_chat_command "set" do |user, args|
   when "fov"
     config.fov = args[1].to_i32
     omegga.broadcast "FOV set to #{config.fov}."
-  when "diffuse"
-    config.diffuse = args[1].to_f64
-    omegga.broadcast "Diffuse coefficient set to #{config.diffuse}."
   when "ambient"
     config.ambient = args[1].to_f64
     omegga.broadcast "Ambient coefficient set to #{config.ambient}."
@@ -84,16 +86,6 @@ omegga.on_chat_command "set" do |user, args|
     z = args[3].to_f64
     config.light_vector = Vector3.new(x, y, z).normalize
     omegga.broadcast "Light vector set to #{config.light_vector}."
-  when "shadows", "castShadows", "castshadows", "cast_shadows"
-    if ["on", "true", "1"].includes? args[1]
-      config.shadows = true
-      omegga.broadcast "Casting shadows enabled."
-    elsif ["off", "false", "0"].includes? args[1]
-      config.shadows = false
-      omegga.broadcast "Casting shadows disabled."
-    else
-      omegga.broadcast "Invalid option for casting shadows."
-    end
   when "shadow", "shadowCoefficient", "shadow_coefficient"
     config.shadow = args[1].to_f64
     omegga.broadcast "Shadow coefficient set to #{config.shadow}."
@@ -119,16 +111,6 @@ omegga.on_chat_command "set" do |user, args|
       omegga.broadcast "Rendering ground plane disabled."
     else
       omegga.broadcast "Invalid option for rendering ground plane."
-    end
-  when "doRefraction", "do_refraction", "refraction"
-    if ["on", "true", "1"].includes? args[1]
-      config.do_refraction = true
-      omegga.broadcast "Refraction enabled."
-    elsif ["off", "false", "0"].includes? args[1]
-      config.do_refraction = false
-      omegga.broadcast "Refraction disabled."
-    else
-      omegga.broadcast "Invalid option for refraction."
     end
   when "doSun", "do_sun", "sun"
     if ["on", "true", "1"].includes? args[1]
@@ -169,16 +151,13 @@ omegga.on_chat_command "trace" do |user, args|
     pos = omegga.get_player_position(user)
     cam = Camera.new(config.width, config.height, pos, config.fov.to_f64, yaw * Math::PI / 180, pitch * Math::PI / 180)
     scene = Scene.new(cam)
-    scene.diffuse_coefficient = config.diffuse
     scene.ambient_coefficient = config.ambient
     scene.light_vector = config.light_vector
-    scene.cast_shadows = config.shadows
     scene.shadow_coefficient = config.shadow
     scene.max_reflection_depth = config.max_reflection_depth
     scene.render_players = config.render_players
     scene.render_ground_plane = config.render_ground_plane
     scene.skybox = skybox
-    scene.do_refraction = config.do_refraction
     scene.do_sun = config.do_sun
 
     omegga.broadcast "Scene initialized. Populating scene objects..."

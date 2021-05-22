@@ -2,8 +2,8 @@ class SphereObject < SceneObject
   getter pos : Vector3
   getter radius : Float64
 
-  def initialize(@pos, @radius, color, reflectiveness = 0.0, transparency = 0.0)
-    super(color, reflectiveness, transparency)
+  def initialize(@pos, @radius, material)
+    super(material)
   end
 
   def intersection_with_ray(ray : Ray) : Hit?

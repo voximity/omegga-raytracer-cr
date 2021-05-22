@@ -5,7 +5,7 @@ class Skybox
 
   def initialize(file : String)
     @canvas = StumpyPNG.read(file)
-    @box = AxisAlignedBoxObject.new(Vector3.new(0, 0, 0), Vector3.new(1, 1, 1), Color.new(0, 0, 0))
+    @box = AxisAlignedBoxObject.new(Vector3.new(0, 0, 0), Vector3.new(1, 1, 1), Material.new(color: Color.new(0, 0, 0)))
     @cell = @canvas.width // 4
   end
 

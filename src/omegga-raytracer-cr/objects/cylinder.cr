@@ -3,8 +3,8 @@ class CylinderObject < SceneObject
   getter pb : Vector3
   getter radius : Float64
 
-  def initialize(@pa, @pb, @radius, color, reflectiveness = 0.0, transparency = 0.0)
-    super(color, reflectiveness, transparency)
+  def initialize(@pa, @pb, @radius, material)
+    super(material)
   end
 
   def intersection_with_ray(ray : Ray) : Hit?

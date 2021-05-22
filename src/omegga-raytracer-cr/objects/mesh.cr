@@ -39,8 +39,8 @@ end
 class MeshObject < SceneObject
   getter triangles : Array(Triangle)
 
-  def initialize(@triangles, color, reflectiveness = 0.0, transparency = 0.0)
-    super(color, reflectiveness, transparency)
+  def initialize(@triangles, material)
+    super(material)
   end
 
   def intersection_with_ray(ray : Ray) : Hit?

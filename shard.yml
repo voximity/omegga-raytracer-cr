@@ -13,6 +13,8 @@ dependencies:
     github: voximity/omegga-cr
   stumpy_png:
     github: stumpycr/stumpy_png
+  open-simplex-noise:
+    github: j8r/crystal-open-simplex-noise
 
 crystal: 1.0.0
 

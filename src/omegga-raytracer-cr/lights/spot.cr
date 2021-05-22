@@ -17,6 +17,6 @@ class SpotLight < PositionLight
     int_a = ((theta - @outer) / epsilon).clamp(0.0..1.0)
 
     dist = (@position - vec).magnitude
-    (int_a * @intensity) / (dist / 80.0) ** 2
+    (int_a * @intensity) / (dist / 100.0) ** 2
   end
 end

@@ -1,9 +1,7 @@
 abstract class SceneObject
-  getter color : Color
-  getter reflectiveness : Float64
-  getter transparency : Float64
+  getter material : Material
 
-  def initialize(@color, @reflectiveness = 0.0, @transparency = 0.0)
+  def initialize(@material)
   end
 
   # Intersection of ray with this object.

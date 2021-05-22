@@ -2,8 +2,8 @@ class AxisAlignedBoxObject < SceneObject
   getter pos : Vector3
   getter size : Vector3
 
-  def initialize(@pos, @size, color, reflectiveness = 0.0, transparency = 0.0)
-    super(color, reflectiveness, transparency)
+  def initialize(@pos, @size, material)
+    super(material)
   end
 
   def intersection_with_ray(ray : Ray) : Hit?

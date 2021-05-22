@@ -4,6 +4,10 @@ shards:
     git: https://github.com/voximity/omegga-cr.git
     version: 0.1.0+git.commit.13ac23dd12312beb0d194431de3b3aa9347d77da
 
+  open-simplex-noise:
+    git: https://github.com/j8r/crystal-open-simplex-noise.git
+    version: 1.1.0
+
   stumpy_core:
     git: https://github.com/stumpycr/stumpy_core.git
     version: 1.9.1
