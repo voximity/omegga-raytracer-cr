@@ -128,8 +128,8 @@ class Scene
         case asset_name
         when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
           if asset_name == "PB_DefaultBrick"
-            material.texture = MixedTexture.new([StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z), brick_matrix.up_vector, 0.4)] of Texture) do |normal|
-              next nil unless normal == brick_matrix.up_vector
+            material.texture = MixedTexture.new([StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z - nsz), 0.4)] of Texture) do |normal|
+              next nil unless normal == Vector3.from_direction(brick.direction)
               0
             end
           end
@@ -139,6 +139,7 @@ class Scene
           if nsx == nsy && nsy == nsz
             @objects << SphereObject.new(pos, Math.max(size.x, Math.max(size.y, size.z)), material) # render as sphere
           else
+            material.texture = StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z - nsz), 0.4)
             @objects << AxisAlignedBoxObject.new(pos, size, material)
           end
         when "PB_DefaultMicroWedge", "PB_DefaultSideWedge"
@@ -201,7 +202,7 @@ class Scene
 
     # todo: rendering players
 
-    plane_material = Material.new(color: @ground_plane_color, texture: StudTexture.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), 0.3))
+    plane_material = Material.new(color: @ground_plane_color, texture: StudTexture.new(Vector3.new(0, 0, 0), 0.3))
     @objects << PlaneObject.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), plane_material) if @render_ground_plane
   end
 
