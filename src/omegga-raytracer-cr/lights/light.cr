@@ -1,14 +1,23 @@
+struct LightShading
+  getter diffuse : Float64
+  getter specular : Float64
+  getter intensity : Float64
+
+  def initialize(@diffuse, @specular, @intensity)
+  end
+end
+
 abstract class Light
   getter color : Color
   getter intensity : Float64
   getter specular_power : Int32
   getter specular_strength : Float64
+  getter max_distance : Float64
 
-  def initialize(@color, @intensity, @specular_power = 64, @specular_strength = 0.5)
+  def initialize(@color, @intensity, @specular_power = 64, @specular_strength = 0.5, @max_distance = 800.0)
   end
 
-  abstract def vec_to_light(point : Vector3) : Vector3
-  abstract def intensity_at(point : Vector3) : Float64
+  abstract def shading(ray : Ray, hit : Hit, &shadow_test : Ray -> NamedTuple(object: SceneObject, hit: Hit)?) : LightShading
 end
 
 abstract class PositionLight < Light
@@ -16,9 +25,5 @@ abstract class PositionLight < Light
 
   def initialize(@position, color, intensity, specular_power = 64, specular_strength = 0.5)
     super(color, intensity, specular_power, specular_strength)
-  end
-
-  def vec_to_light(point : Vector3) : Vector3
-    (@position - point).normalize
   end
 end

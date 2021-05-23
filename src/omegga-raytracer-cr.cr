@@ -3,6 +3,7 @@ require "stumpy_png"
 require "open-simplex-noise"
 
 require "./omegga-raytracer-cr/lights/light"
+require "./omegga-raytracer-cr/lights/area"
 require "./omegga-raytracer-cr/lights/point"
 require "./omegga-raytracer-cr/lights/spot"
 require "./omegga-raytracer-cr/lights/sun"
@@ -150,7 +151,7 @@ omegga.on_chat_command "trace" do |user, args|
 
     pos = omegga.get_player_position(user)
     cam = Camera.new(config.width, config.height, pos, config.fov.to_f64, yaw * Math::PI / 180, pitch * Math::PI / 180)
-    scene = Scene.new(cam)
+    scene = Scene.new(cam, omegga)
     scene.ambient_coefficient = config.ambient
     scene.light_vector = config.light_vector
     scene.shadow_coefficient = config.shadow
@@ -161,7 +162,7 @@ omegga.on_chat_command "trace" do |user, args|
     scene.do_sun = config.do_sun
 
     omegga.broadcast "Scene initialized. Populating scene objects..."
-    scene.populate_scene save, omegga
+    scene.populate_scene save
 
     omegga.broadcast "Scene populated. Rendering..."
     img = scene.render

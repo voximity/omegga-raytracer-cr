@@ -31,7 +31,9 @@ class Scene
   property fog_density = 0.00007
   property do_sun = true
 
-  def initialize(@camera)
+  @omegga : RPCClient
+
+  def initialize(@camera, @omegga)
     # other fields can be changed as they are properties
   end
 
@@ -70,7 +72,7 @@ class Scene
     (Scene.reflect(incidence, normal) + Scene.random_unit * fuzz).normalize
   end
 
-  def populate_scene(save : BRS::Save, omegga : RPCClient)
+  def populate_scene(save : BRS::Save)
     @objects = [] of SceneObject
     @lights = [] of Light
     @lights << SunLight.new(@light_vector, @light_color, 1.0) if @do_sun
@@ -140,7 +142,7 @@ class Scene
         when "PB_DefaultMicroWedgeCorner"
           @objects << WedgeObject.new(WedgeObject.wedge_corner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, material)
         else
-          omegga.broadcast "Unknown brick asset #{asset_name}"
+          @omegga.broadcast "Unknown brick asset #{asset_name}"
         end
       end
 
@@ -152,7 +154,13 @@ class Scene
         color = lcomp["bUseBrickColor"].as(Bool) ? color : Color.new(color_raw[0], color_raw[1], color_raw[2])
         intensity = lcomp["Brightness"].as(Int32 | Float64).to_f64 / 100.0
 
-        @lights << PointLight.new(pos, color, intensity)
+        if lcomp["bMatchBrickShape"].as(Bool)
+          # area light
+          @lights << AreaLight.new(pos, size, color, intensity, accuracy: 4)
+        else
+          # point light
+          @lights << PointLight.new(pos, color, intensity)
+        end
       end
 
       if brick.components.has_key?("BCD_SpotLight")
@@ -215,43 +223,18 @@ class Scene
 
     sum_vecs = ambient
     lights.each do |light|
-      lcol = light.color.to_v3
-      lvec = light.vec_to_light(hit_pos)
-      lint = light.intensity_at(hit_pos)
-
-      # diffuse
-      diff = Math.max(hit[:hit].normal.dot(lvec), 0.0)
-
-      # specular (phong)
-      #view_dir = ray.direction
-      #reflect_dir = Scene.reflect(lvec, hit[:hit].normal)
-      #spec = Math.max(view_dir.dot(reflect_dir), 0.0) ** light.specular_power
-
-      # specular (blinn-phong)
-      view_dir = -ray.direction
-      halfway_dir = (lvec + view_dir).normalize
-      spec = Math.max(0.0, hit[:hit].normal.dot(halfway_dir)) ** light.specular_power
-
-      # shadows
-      shadow_ray = Ray.new(hit_pos + hit[:hit].normal * EPSILON, lvec)
-      shadow_hit = cast_ray(shadow_ray, @objects)
-
-      unless shadow_hit.nil?
-        shadowed = true
-        shadowed = false if light.is_a?(PositionLight) && shadow_hit[:hit].near > (light.position - hit_pos).magnitude
-
-        if shadowed
-          sd_amount = Scene.remap(shadow_hit[:object].material.transparency, 0, 1, light.is_a?(SunLight) ? @shadow_coefficient : 0.0, 1)
-          spec *= sd_amount
-          diff *= sd_amount
-        end
+      if light.is_a?(PositionLight)
+        next if light.max_distance <= (light.position - hit_pos).magnitude
       end
 
+      lcol = light.color.to_v3
+      shading = light.shading(ray, hit[:hit]) { |inc_ray| cast_ray(inc_ray, @objects) }
+      
       # color from diffuse/specular
-      diffuse = lcol * diff
-      specular = lcol * (spec * light.specular_strength)
+      diffuse = lcol * shading.diffuse
+      specular = lcol * (shading.specular * light.specular_strength)
 
-      sum_vecs += (diffuse + specular) * lint
+      sum_vecs += (diffuse + specular) * shading.intensity
     end
 
     color = Color.new(sum_vecs * colv)
