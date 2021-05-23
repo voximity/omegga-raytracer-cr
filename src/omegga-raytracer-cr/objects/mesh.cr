@@ -41,9 +41,19 @@ class MeshObject < SceneObject
 
   def initialize(@triangles, material)
     super(material)
+
+    verts = @triangles.map { |tri| [tri.v0, tri.v1, tri.v2] }.flatten
+    bound_min = Vector3.new(verts.min_of(&.x), verts.min_of(&.y), verts.min_of(&.z))
+    bound_max = Vector3.new(verts.max_of(&.x), verts.max_of(&.y), verts.max_of(&.z))
+    bound_center = (bound_min + bound_max) * 0.5
+    bound_size = bound_max - bound_center
+    @bounding_box = AxisAlignedBoxObject.new(bound_center, bound_size, material)
   end
 
   def intersection_with_ray(ray : Ray) : Hit?
+    # initially intersect with an aabb, reject if no hit
+    return nil if @bounding_box.intersection_with_ray(ray).nil?
+
     # run hits for all of the triangles
     hits = [] of NamedTuple(tri: Triangle, t: Float64)
     triangles.each do |tri|

@@ -83,6 +83,10 @@ struct Matrix
     Vector3.new(-@m20, -@m21, -@m22)
   end
 
+  def up_vector : Vector3
+    Vector3.new(@m20, @m21, @m22)
+  end
+
   def pos : Vector3
     Vector3.new(@x, @y, @z)
   end

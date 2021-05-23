@@ -30,6 +30,10 @@ class Scene
   property fog_color = Color.new(206, 225, 245)
   property fog_density = 0.00007
   property do_sun = true
+  property supersampling : Int32 = 1
+  property do_progress = true
+
+  getter total_rays_cast = 0
 
   @omegga : RPCClient
 
@@ -70,6 +74,10 @@ class Scene
 
   def self.fuzz_reflect(incidence : Vector3, normal : Vector3, fuzz : Float64) : Vector3
     (Scene.reflect(incidence, normal) + Scene.random_unit * fuzz).normalize
+  end
+
+  def self.random_float(range : Range(Float64, Float64)) : Float64
+    Random.rand * (range.end - range.begin) + range.begin
   end
 
   def populate_scene(save : BRS::Save)
@@ -114,12 +122,14 @@ class Scene
         emissive: material_name == "BMC_Glow"
       )
 
+      brick_matrix = Matrix.from_brick_orientation(pos, brick.direction, brick.rotation)
+
       if brick.visibility
         case asset_name
         when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
           if asset_name == "PB_DefaultBrick"
-            material.texture = MixedTexture.new([StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z), Vector3.new(0, 0, 1), 0.4)] of Texture) do |normal|
-              next nil unless normal == Vector3.new(0, 0, 1)
+            material.texture = MixedTexture.new([StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z), brick_matrix.up_vector, 0.4)] of Texture) do |normal|
+              next nil unless normal == brick_matrix.up_vector
               0
             end
           end
@@ -131,16 +141,26 @@ class Scene
           else
             @objects << AxisAlignedBoxObject.new(pos, size, material)
           end
-        when "PB_DefaultMicroWedge"
-          @objects << WedgeObject.new(WedgeObject.wedge_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, material)
+        when "PB_DefaultMicroWedge", "PB_DefaultSideWedge"
+          @objects << MicroBrickObject.new(MicroBrickObject.wedge_verts, brick_matrix, brick.size.to_v3, material)
         when "PB_DefaultMicroWedgeTriangleCorner"
-          @objects << WedgeObject.new(WedgeObject.wedge_triangle_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, material)
+          @objects << MicroBrickObject.new(MicroBrickObject.wedge_triangle_verts, brick_matrix, brick.size.to_v3, material)
         when "PB_DefaultMicroWedgeOuterCorner"
-          @objects << WedgeObject.new(WedgeObject.wedge_outer_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, material)
+          @objects << MicroBrickObject.new(MicroBrickObject.wedge_outer_verts, brick_matrix, brick.size.to_v3, material)
         when "PB_DefaultMicroWedgeInnerCorner"
-          @objects << WedgeObject.new(WedgeObject.wedge_inner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, material)
+          @objects << MicroBrickObject.new(MicroBrickObject.wedge_inner_verts, brick_matrix, brick.size.to_v3, material)
         when "PB_DefaultMicroWedgeCorner"
-          @objects << WedgeObject.new(WedgeObject.wedge_corner_verts, Matrix.from_brick_orientation(pos, brick.direction, brick.rotation), brick.size.to_v3, material)
+          @objects << MicroBrickObject.new(MicroBrickObject.wedge_corner_verts, brick_matrix, brick.size.to_v3, material)
+        when "PB_DefaultWedge"
+          @objects << WedgeObject.new(brick.size.to_v3, brick_matrix, material, &->WedgeObject.build_wedge_tris(Vector3, Matrix))
+        when "PB_DefaultRamp"
+          @objects << WedgeObject.new(brick.size.to_v3, brick_matrix, material) do |vec, matr|
+            WedgeObject.build_ramp_tris(vec, matr, flipped: false)
+          end
+        when "PB_DefaultRampInverted"
+          @objects << WedgeObject.new(brick.size.to_v3, brick_matrix, material) do |vec, matr|
+            WedgeObject.build_ramp_tris(vec, matr, flipped: true)
+          end
         else
           @omegga.broadcast "Unknown brick asset #{asset_name}"
         end
@@ -186,6 +206,8 @@ class Scene
   end
 
   def cast_ray(ray : Ray, objs : Array(SceneObject)) : NamedTuple(object: SceneObject, hit: Hit)?
+    @total_rays_cast += 1
+
     intersected = [] of NamedTuple(object: SceneObject, hit: Hit)
     objs.each do |obj|
       res = obj.intersection_with_ray(ray)
@@ -284,12 +306,43 @@ class Scene
   end
 
   def render : Array(Array(Color))
+    @total_rays_cast = 0
+
+    ray_timer = Time::Span.new
+    last_time = Time.monotonic
+    start_time = Time.monotonic
+
     img = [] of Array(Color)
     @camera.vh.times do |y|
       img << [] of Color
       @camera.vw.times do |x|
-        ray = Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64))
-        img[y] << get_ray_color(ray)
+        if supersampling > 1
+          sampled_colors = [] of Color
+          ss2 = supersampling * supersampling
+          sinv = 1.0 / supersampling
+          ss2.times do |i|
+            ssx = (i % supersampling).to_f64 / supersampling
+            ssy = (i // supersampling).to_f64 / supersampling
+            rgx = ((x + ssx)..(x + ssx + sinv))
+            rgy = ((y + ssy)..(y + ssy + sinv))
+            sampled_colors << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+          end
+          vecs = sampled_colors.map(&.to_v3)
+          vecsum = Vector3.new(0, 0, 0)
+          vecs.each { |vec| vecsum += vec }
+          img[y] << Color.new(vecsum / ss2.to_f64)
+        else
+          img[y] << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+        end
+        now_time = Time.monotonic
+        ray_timer += now_time - last_time
+        last_time = now_time
+
+        if @do_progress && ray_timer >= Time::Span.new(seconds: 10)
+          ray_timer -= Time::Span.new(seconds: 10)
+          progress = (x + y * @camera.vw).to_f64 / (@camera.vw * @camera.vh)
+          @omegga.broadcast "[#{(progress * 100.0).round.to_i32}%] Cast #{@total_rays_cast.format} rays, #{(now_time - start_time).to_s} elapsed"
+        end
       end
     end
     img

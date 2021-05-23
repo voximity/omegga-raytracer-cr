@@ -12,6 +12,7 @@ require "./omegga-raytracer-cr/objects/object"
 require "./omegga-raytracer-cr/objects/box"
 require "./omegga-raytracer-cr/objects/cylinder"
 require "./omegga-raytracer-cr/objects/mesh"
+require "./omegga-raytracer-cr/objects/microbrick"
 require "./omegga-raytracer-cr/objects/plane"
 require "./omegga-raytracer-cr/objects/sphere"
 require "./omegga-raytracer-cr/objects/wedge"
@@ -46,6 +47,7 @@ class Config
   property render_players : Bool = true
   property render_ground_plane : Bool = true
   property do_sun = true
+  property supersampling : Int32 = 1
 
   def initialize
   end
@@ -60,6 +62,7 @@ omegga.on_init do
 end
 
 omegga.on_chat_command "test" do |user|
+  omegga.broadcast "#{Matrix.new(Vector3.new(0, 0, 0)).up_vector}"
 end
 
 omegga.on_chat_command "set" do |user, args|
@@ -90,6 +93,9 @@ omegga.on_chat_command "set" do |user, args|
   when "shadow", "shadowCoefficient", "shadow_coefficient"
     config.shadow = args[1].to_f64
     omegga.broadcast "Shadow coefficient set to #{config.shadow}."
+  when "supersampling", "ss", "aa", "antialiasing"
+    config.supersampling = args[1].to_i32
+    omegga.broadcast "Supersampling set to #{config.supersampling}."
   when "maxReflectionDepth", "max_reflection_depth", "reflectionDepth", "reflection_depth"
     config.max_reflection_depth = args[1].to_i32
     omegga.broadcast "Max reflection depth set to #{config.max_reflection_depth}."
@@ -145,6 +151,7 @@ omegga.on_chat_command "trace" do |user, args|
 
   to_bricks = args[2] != "img" if args.size >= 3
 
+  total_rays = 0
   elapsed = Time.measure do
     omegga.broadcast "Reading bricks..."
     save = omegga.get_save_data
@@ -160,6 +167,7 @@ omegga.on_chat_command "trace" do |user, args|
     scene.render_ground_plane = config.render_ground_plane
     scene.skybox = skybox
     scene.do_sun = config.do_sun
+    scene.supersampling = config.supersampling
 
     omegga.broadcast "Scene initialized. Populating scene objects..."
     scene.populate_scene save
@@ -191,9 +199,11 @@ omegga.on_chat_command "trace" do |user, args|
       end
       StumpyPNG.write(canvas, "raytrace.png")
     end
+
+    total_rays = scene.total_rays_cast
   end
 
-  omegga.broadcast "Operation complete in #{elapsed} for image #{config.width}x#{config.height}."
+  omegga.broadcast "Operation complete in #{elapsed} for image #{config.width}x#{config.height}. Cast #{total_rays.format} rays."
 end
 
 omegga.start
