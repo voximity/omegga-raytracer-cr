@@ -11,6 +11,36 @@ module Raytracer
       tmin + (tmax - tmin) * d
     end
 
+    def self.name_value(name : String) : Int32
+      value = 0
+      name.chars.each_with_index do |char, i|
+        cval = char.ord
+        rind = name.size - i
+        rind = rind - 1 if name.size % 2 == 1
+        cval = -cval if rind % 4 >= 2
+        value += cval
+      end
+      value
+    end
+
+    def self.player_colors : Array(Color)
+      [
+        Color.new(196, 40, 28),
+        Color.new(13, 105, 172),
+        Color.new(39, 70, 45),
+        Color.new(107, 50, 124),
+        Color.new(218, 133, 65),
+        Color.new(245, 205, 48),
+        Color.new(232, 186, 200),
+        Color.new(245, 205, 48)
+      ] of Color
+    end
+
+    def self.player_color(name : String) : Color
+      arr = Scene.player_colors
+      arr[Scene.name_value(name) % arr.size]
+    end
+
     property camera = Camera.new
     property objects = [] of SceneObject
     property lights = [] of Light
@@ -21,7 +51,7 @@ module Raytracer
     property light_color = Color.new(255, 255, 255)
     property shadow_coefficient = 0.6
     property max_reflection_depth = 8
-    property render_players = true
+    property render_players = false
     property render_ground_plane = true
     property ground_plane_color = Color.new(92, 148, 84)
     property do_refraction = true
@@ -203,7 +233,53 @@ module Raytracer
         end
       end
 
-      # todo: rendering players
+      if @render_players
+        player_obj = OBJ::FileData.new
+        player_obj.load("assets/brickhead.obj", @omegga)
+        player_obj.center
+        player_obj.dilate 6.8
+        player_obj.apply_matrix Matrix.from_angles_xyz(0, 0, -Math::PI / 2.0)
+
+        player_posns = @omegga.get_all_player_positions
+
+        # get player positions and rotations
+        spawn do
+          player_posns.each do |plr_pos|
+            @omegga.writeln "Chat.Command /GetTransform #{plr_pos[:player].name}"
+          end
+        end
+
+        watcher = Log::WatcherBundled.new(/Transform: X=(-?[0-9,.]+) Y=(-?[0-9,.]+) Z=(-?[0-9,.]+) Roll=(-?[0-9,.]+) Pitch=(-?[0-9,.]+) Yaw=(-?[0-9,.]+)/, timeout: 200.milliseconds, debounce: true)
+        @omegga.wrangler.watchers << watcher
+        matches = watcher.receive_bundled(@omegga.wrangler)
+        transforms = matches.map do |match|
+          {
+            x: match[1].tr(",", "").to_f64,
+            y: match[2].tr(",", "").to_f64,
+            z: match[3].tr(",", "").to_f64,
+            roll: match[4].tr(",", "").to_f64,
+            pitch: match[5].tr(",", "").to_f64,
+            yaw: match[6].tr(",", "").to_f64
+          }
+        end
+
+        player_colors = [
+
+        ] of Color
+
+        player_posns.each do |plr_pos|
+          pos = plr_pos[:position]
+          next if (@camera.origin - pos).magnitude <= 1.0
+          current_transform = transforms.min_by { |tup| (pos - Vector3.new(tup[:x], tup[:y], tup[:z])).magnitude }
+
+          obj = MeshObject.new(
+            player_obj.build_tris(pos, Matrix.from_angles_xyz(0, 0, Math::PI + current_transform[:yaw] * Math::PI / 180.0)),
+            material: Material.new(color: Scene.player_color(plr_pos[:player].name))
+          )
+
+          @objects << obj
+        end
+      end
 
       plane_material = Material.new(color: @ground_plane_color, texture: StudTexture.new(Vector3.new(0, 0, 0), 0.3))
       @objects << PlaneObject.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1), plane_material) if @render_ground_plane

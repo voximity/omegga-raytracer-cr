@@ -56,10 +56,11 @@ config_options << ConfigOption(Bool).new("Ground Plane", ["groundplane", "render
   true, "Whether or not to render the ground plane.") { |scene, gp| scene.render_ground_plane = gp }
 config_options << ConfigOption(Bool).new("Ground Plane Texture", ["groundplanetexture", "ground_plane_texture"],
   true, "Whether or not to render the ground plane texture.") { |scene, gpt| scene.stud_texture = gpt }
+config_options << ConfigOption(Bool).new("Players", ["players", "renderplayers", "render_players"], false, "Whether or not to render players.") { |scene, rp| scene.render_players = rp }
 #config_options << ConfigOption(String).new("Skybox", ["skybox", "sky"], "skybox.png", "The image name of the skybox to use.") { |scene, sb| scene.skybox = Raytracer::Skybox.new(sb) }
 
 omegga = RPCClient.new
-skybox = Raytracer::Skybox.new("skybox.png")
+skybox = Raytracer::Skybox.new("assets/skybox.png")
 authorized_users = [] of String
 
 def yaw_of(user : String, omegga : RPCClient)

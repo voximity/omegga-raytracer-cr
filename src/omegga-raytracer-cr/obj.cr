@@ -32,14 +32,12 @@ module Raytracer::OBJ
 
         n += 1
       end
-
-      omegga.broadcast "Poly count (non-triangles): #{non_tri_count}"
     end
 
-    def build_tris(pos : Vector3) : Array(Triangle)
+    def build_tris(pos : Vector3, matrix : Matrix = Matrix.new(0.0, 0.0, 0.0)) : Array(Triangle)
       tris = [] of Triangle
       @faces.each do |(i0, i1, i2)|
-        tris << Triangle.new(verts[i0] + pos, verts[i1] + pos, verts[i2] + pos)
+        tris << Triangle.new((matrix * Matrix.new(verts[i0])).pos + pos, (matrix * Matrix.new(verts[i1])).pos + pos, (matrix * Matrix.new(verts[i2])).pos + pos)
       end
       tris
     end
