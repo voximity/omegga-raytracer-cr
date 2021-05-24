@@ -1,4 +1,4 @@
-module OBJ
+module Raytracer::OBJ
   class FileData
     getter verts = [] of Vector3
     getter faces = [] of Tuple(Int32, Int32, Int32)

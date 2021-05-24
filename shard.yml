@@ -6,7 +6,7 @@ authors:
 
 targets:
   omegga-raytracer-cr:
-    main: src/omegga-raytracer-cr.cr
+    main: src/plugin.cr
 
 dependencies:
   omegga-cr:

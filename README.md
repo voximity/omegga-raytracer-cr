@@ -1,9 +1,21 @@
 # omegga-raytracer-cr
 
-![Sample render](https://i.imgur.com/9DRgc2P.png)
+![Sample render](https://i.imgur.com/voHg4G9.png)
 
-Effectively a port of [omegga-raytracer](https://github.com/voximity/omegga-raytracer) using omegga-cr.
-This version, written in Crystal, is substantially faster. It also has support for meshes, meaning it should be trivial to add new bricks like wedges, ramps, or even non-procedural bricks.
+This [Omegga](https://github.com/brickadia-community/omegga) plugin acts as a basic raytracer. It allows you
+to capture small scenes in your Brickadia server and render them out to bricks or an image.
+
+This project [started in JavaScript](https://github.com/voximity/omegga-raytracer), featuring raytracing
+features like shadows, reflections, and basic diffuse lighting. Since, I have reimplemented the entire
+raytracer in [Crystal](https://crystal-lang.org/) and added more features like refractions, lighting,
+Blinn-Phong shading, meshes, materials, textures, skyboxes, and more. The above screenshot is a sample
+raw output from the raytracer demonstrating some of these features.
+
+### Practicality
+
+This raytracer is highly experimental, and I would not suggest it for real use. It is feasible to render
+small scenes of less than 1,000 bricks with a few lights, but it is highly unoptimized and does exactly
+what you tell it to. Be careful rendering massive scenes.
 
 ## Installation
 
