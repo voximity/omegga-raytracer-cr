@@ -124,14 +124,15 @@ module Raytracer
 
         brick_matrix = Matrix.from_brick_orientation(pos, brick.direction, brick.rotation)
 
+        up_stud_tex = MixedTexture.new([StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z - nsz), 0.4)] of Texture) do |normal|
+          next 0 if normal == Vector3.from_direction(brick.direction)
+        end
+
         if brick.visibility
           case asset_name
           when "PB_DefaultBrick", "PB_DefaultMicroBrick", "PB_DefaultTile", "PB_DefaultSmoothTile"
             if asset_name == "PB_DefaultBrick"
-              material.texture = MixedTexture.new([StudTexture.new(Vector3.new(pos.x - nsx, pos.y - nsy, pos.z - nsz), 0.4)] of Texture) do |normal|
-                next nil unless normal == Vector3.from_direction(brick.direction)
-                0
-              end
+              material.texture = up_stud_tex
             end
 
             @objects << AxisAlignedBoxObject.new(pos, size, material)
@@ -155,10 +156,12 @@ module Raytracer
           when "PB_DefaultWedge"
             @objects << WedgeObject.new(brick.size.to_v3, brick_matrix, material, &->WedgeObject.build_wedge_tris(Vector3, Matrix))
           when "PB_DefaultRamp"
+            material.texture = up_stud_tex
             @objects << WedgeObject.new(brick.size.to_v3, brick_matrix, material) do |vec, matr|
               WedgeObject.build_ramp_tris(vec, matr, flipped: false)
             end
           when "PB_DefaultRampInverted"
+            material.texture = up_stud_tex
             @objects << WedgeObject.new(brick.size.to_v3, brick_matrix, material) do |vec, matr|
               WedgeObject.build_ramp_tris(vec, matr, flipped: true)
             end

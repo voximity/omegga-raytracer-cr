@@ -5,8 +5,8 @@ module Raytracer
     getter inner : Float64
     getter epsilon : Float64
 
-    def initialize(position, @direction, outer, inner, color, intensity)
-      super(position, color, intensity)
+    def initialize(position, @direction, outer, inner, color, intensity, shadow_coefficient = 0.0)
+      super(position, color, intensity, shadow_coefficient: shadow_coefficient)
 
       @outer = Math.cos(outer)
       @inner = Math.cos(inner)
@@ -31,7 +31,7 @@ module Raytracer
       shadow_hit = shadow_test.call(shadow_ray)
       unless shadow_hit.nil?
         if shadow_hit[:hit].near <= dist
-          sd_amount = shadow_hit[:object].material.transparency
+          sd_amount = Scene.remap(shadow_hit[:object].material.transparency, 0, 1, @shadow_coefficient, 1)
           diffuse *= sd_amount
           specular *= sd_amount
         end

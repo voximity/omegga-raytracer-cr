@@ -1,7 +1,7 @@
 module Raytracer
   class PointLight < PositionLight
-    def initialize(position, color, intensity)
-      super(position, color, intensity)
+    def initialize(position, color, intensity, shadow_coefficient = 0.0)
+      super(position, color, intensity, shadow_coefficient: shadow_coefficient)
     end
 
     def shading(ray : Ray, hit : Hit, &shadow_test : Ray -> NamedTuple(object: SceneObject, hit: Hit)?) : LightShading
@@ -22,7 +22,7 @@ module Raytracer
       shadow_hit = shadow_test.call(shadow_ray)
       unless shadow_hit.nil?
         if shadow_hit[:hit].near <= dist
-          sd_amount = shadow_hit[:object].material.transparency
+          sd_amount = Scene.remap(shadow_hit[:object].material.transparency, 0, 1, @shadow_coefficient, 1)
           diffuse *= sd_amount
           specular *= sd_amount
         end

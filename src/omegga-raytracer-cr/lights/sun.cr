@@ -3,8 +3,9 @@ module Raytracer
     getter vector : Vector3
     getter shadow_coefficient : Float64
 
-    def initialize(vector, color, intensity, @shadow_coefficient = 0.4)
+    def initialize(vector, color, intensity, shadow_coefficient = 0.4)
       super(color, intensity, specular_power: 32)
+      @shadow_coefficient = shadow_coefficient
       @vector = vector.normalize
     end
 

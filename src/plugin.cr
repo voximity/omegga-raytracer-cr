@@ -62,6 +62,16 @@ omegga = RPCClient.new
 skybox = Raytracer::Skybox.new("skybox.png")
 authorized_users = [] of String
 
+def yaw_of(user : String, omegga : RPCClient)
+  omegga.writeln "Chat.Command /GetTransform #{user}"
+
+  watcher = Log::Watcher.new(/Transform: X=(-?[0-9,.]+) Y=(-?[0-9,.]+) Z=(-?[0-9,.]+) Roll=(-?[0-9,.]+) Pitch=(-?[0-9,.]+) Yaw=(-?[0-9,.]+)/, timeout: 1.second)
+  omegga.wrangler.watchers << watcher
+  match = watcher.receive(omegga.wrangler)
+
+  match[6].tr(",", "").to_f64
+end
+
 omegga.on_init do |conf|
   omegga.broadcast "Raytracer loaded."
 
@@ -153,20 +163,16 @@ end
 omegga.on_chat_command "trace" do |user, args|
   next unless authorized_users.includes?(user)
 
-  yaw = 0.0
+  yaw = yaw_of(user, omegga)
   pitch = 0.0
 
   to_bricks = true
 
   if args.size >= 1
-    yaw = args[0].to_f64? || yaw
+    pitch = args[0].to_f64? || yaw
   end
 
-  if args.size >= 2
-    pitch = args[1].to_f64? || pitch
-  end
-
-  to_bricks = args[2] != "img" if args.size >= 3
+  to_bricks = args[1] != "img" if args.size >= 2
 
   width = config_options[0].as(ConfigOption(Int32)).value
   height = config_options[1].as(ConfigOption(Int32)).value

@@ -13,9 +13,8 @@ module Raytracer
     getter intensity : Float64
     getter specular_power : Int32
     getter specular_strength : Float64
-    getter max_distance : Float64
 
-    def initialize(@color, @intensity, @specular_power = 64, @specular_strength = 0.5, @max_distance = 800.0)
+    def initialize(@color, @intensity, @specular_power = 64, @specular_strength = 0.5, @shadow_coefficient = 0.0)
     end
 
     abstract def shading(ray : Ray, hit : Hit, &shadow_test : Ray -> NamedTuple(object: SceneObject, hit: Hit)?) : LightShading
@@ -23,9 +22,10 @@ module Raytracer
 
   abstract class PositionLight < Light
     getter position : Vector3
+    getter max_distance : Float64
 
-    def initialize(@position, color, intensity, specular_power = 64, specular_strength = 0.5)
-      super(color, intensity, specular_power, specular_strength)
+    def initialize(@position, color, intensity, specular_power = 64, specular_strength = 0.5, @max_distance = 800.0, shadow_coefficient = 0.0)
+      super(color, intensity, specular_power, specular_strength, shadow_coefficient)
     end
   end
 end
