@@ -1,7 +1,30 @@
 {
   "name": "raytracer-cr",
-  "description": "Port of omegga-raytracer using omegga-cr.",
+  "description": "What do I put here? It's a raytracer.",
   "author": "x",
-  "config": {},
-  "commands": []
+  "config": {
+    "authorized": {
+      "description": "A list of users allowed to use the raytracer.",
+      "type": "players",
+      "default": []
+    }
+  },
+  "commands": [
+    {
+      "name": "!set",
+      "description": "Change a raytracer parameter.",
+      "example": "!set width 1920",
+      "args": [{"name": "option", "description": "The name of the option to change."}, {"name": "value", "description": "The value to set the option to."}]
+    },
+    {
+      "name": "!trace",
+      "description": "Begin raytracing.",
+      "example": "!trace 0 0",
+      "args": [
+        {"name": "yaw", "description": "The yaw to apply to the camera. -45 is 45 degrees left, 45 is 45 degrees right."},
+        {"name": "pitch", "description": "The pitch to apply to the camera. -45 is 45 degrees down, 45 is 45 degrees up."},
+        {"name": "img", "description": "Set to \"img\" to write to raytrace.png instead of loading ingame.", "required": false}
+      ]
+    }
+  ]
 }

@@ -60,12 +60,17 @@ config_options << ConfigOption(Bool).new("Ground Plane Texture", ["groundplanete
 
 omegga = RPCClient.new
 skybox = Raytracer::Skybox.new("skybox.png")
+authorized_users = [] of String
 
-omegga.on_init do
+omegga.on_init do |conf|
   omegga.broadcast "Raytracer loaded."
+
+  conf["authorized"].as_a.map { |usr| usr.as_h["name"].as_s }.each { |name| authorized_users << name }
 end
 
 omegga.on_chat_command "set" do |user, args|
+  next unless authorized_users.includes?(user)
+
   unless args.size >= 2
     omegga.broadcast "Expected a setting and at least one value.".br_colorize(:red)
     next
@@ -110,6 +115,10 @@ omegga.on_chat_command "set" do |user, args|
   elsif option.is_a? ConfigOption(Vector3)
     # parse vectors
 
+    if args.size < 4
+      omegga.broadcast "Please pass #{"three valid vector components".br_colorize(:red)} for the option #{option.name.br_colorize(:yellow)}."
+      next
+    end
     x = args[1].to_f64?
     y = args[2].to_f64?
     z = args[3].to_f64?
@@ -142,7 +151,8 @@ omegga.on_chat_command "set" do |user, args|
 end
 
 omegga.on_chat_command "trace" do |user, args|
-  next unless user == "x"
+  next unless authorized_users.includes?(user)
+
   yaw = 0.0
   pitch = 0.0
 
