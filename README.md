@@ -23,9 +23,21 @@ First, install [Crystal](https://crystal-lang.org/). Then,
 
 `omegga install gh:voximity/raytracer-cr`
 
+### Multithreading
+
+To enable multithreading, you can edit your `omegga_plugin` to be the following:
+
+```sh
+#!/bin/bash
+cd plugins/omegga-raytracer-cr
+shards build -q -Dpreview_mt && CRYSTAL_WORKERS=N ./bin/omegga-raytracer-cr
+```
+
+where `N` is the amount of workers (cores/threads) you'd like to allocate to the raytracer.
+
 ## Usage
 
-See the original plugin above for usage instructions.
+TODO: this
 
 ## Contributing
 

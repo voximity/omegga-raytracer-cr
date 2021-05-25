@@ -243,7 +243,7 @@ module Raytracer
         player_posns = @omegga.get_all_player_positions
 
         # get player positions and rotations
-        spawn do
+        spawn same_thread: true do
           player_posns.each do |plr_pos|
             @omegga.writeln "Chat.Command /GetTransform #{plr_pos[:player].name}"
           end
@@ -396,40 +396,105 @@ module Raytracer
       last_time = Time.monotonic
       start_time = Time.monotonic
 
-      img = [] of Array(Color)
-      @camera.vh.times do |y|
-        img << [] of Color
-        @camera.vw.times do |x|
-          if supersampling > 1
-            sampled_colors = [] of Color
-            ss2 = supersampling * supersampling
-            sinv = 1.0 / supersampling
-            ss2.times do |i|
-              ssx = (i % supersampling).to_f64 / supersampling
-              ssy = (i // supersampling).to_f64 / supersampling
-              rgx = ((x + ssx)..(x + ssx + sinv))
-              rgy = ((y + ssy)..(y + ssy + sinv))
-              sampled_colors << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
-            end
-            vecs = sampled_colors.map(&.to_v3)
-            vecsum = Vector3.new(0, 0, 0)
-            vecs.each { |vec| vecsum += vec }
-            img[y] << Color.new(vecsum / ss2.to_f64)
-          else
-            img[y] << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
-          end
-          now_time = Time.monotonic
-          ray_timer += now_time - last_time
-          last_time = now_time
+      {% if flag?("preview_mt") %}
+        # figure out how many workers we have, and make each of them work on an even column of the image
+        cores = (ENV["CRYSTAL_WORKERS"]? || "4").to_i32
+        core_channels = [] of Channel(Array(Array(Color)))
+        cols_per_core = @camera.vw // cores
 
-          if @do_progress && ray_timer >= Time::Span.new(seconds: 10)
-            ray_timer -= Time::Span.new(seconds: 10)
-            progress = (x + y * @camera.vw).to_f64 / (@camera.vw * @camera.vh)
-            @omegga.broadcast "[#{(progress * 100.0).round.to_i32}%] Cast #{@total_rays_cast.format} rays, #{(now_time - start_time).to_s} elapsed"
+        sinv = 1.0 / supersampling
+        ss2 = supersampling * supersampling
+
+        cores.times do |core|
+          last_core = core == cores - 1
+
+          core_channel = Channel(Array(Array(Color))).new
+          core_channels << core_channel
+
+          spawn same_thread: false do
+            my_out = [] of Array(Color)
+
+            @camera.vh.times do |y|
+              my_out << [] of Color
+              ((core * cols_per_core)...(last_core ? @camera.vw : (core + 1) * cols_per_core)).each do |x|
+                if supersampling > 1
+                  sampled_colors = [] of Color
+                  ss2.times do |i|
+                    ssx = (i % supersampling).to_f64 / supersampling
+                    ssy = (i // supersampling).to_f64 / supersampling
+                    rgx = ((x + ssx)..(x + ssx + sinv))
+                    rgy = ((y + ssy)..(y + ssy + sinv))
+                    sampled_colors << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+                  end
+                  vecs = sampled_colors.map(&.to_v3)
+                  vecsum = Vector3.new(0, 0, 0)
+                  vecs.each { |vec| vecsum += vec }
+                  my_out[y] << Color.new(vecsum / ss2.to_f64)
+                else
+                  my_out[y] << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+                end
+              end
+            end
+
+            core_channel.send my_out
           end
         end
-      end
-      img
+
+        results = [] of Array(Array(Color))
+        img = [] of Array(Color)
+
+        # get each result from each core
+        cores.times do |core|
+          results << core_channels[core].receive
+        end
+
+        # aggregate it into the final image
+        @camera.vh.times do |y|
+          img << [] of Color
+          cores.times do |c|
+            results[c][y].each do |xc|
+              img[y] << xc
+            end
+          end
+        end
+
+        return img
+      {% else %}
+        img = [] of Array(Color)
+        @camera.vh.times do |y|
+          img << [] of Color
+          @camera.vw.times do |x|
+            if supersampling > 1
+              sampled_colors = [] of Color
+              ss2 = supersampling * supersampling
+              sinv = 1.0 / supersampling
+              ss2.times do |i|
+                ssx = (i % supersampling).to_f64 / supersampling
+                ssy = (i // supersampling).to_f64 / supersampling
+                rgx = ((x + ssx)..(x + ssx + sinv))
+                rgy = ((y + ssy)..(y + ssy + sinv))
+                sampled_colors << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+              end
+              vecs = sampled_colors.map(&.to_v3)
+              vecsum = Vector3.new(0, 0, 0)
+              vecs.each { |vec| vecsum += vec }
+              img[y] << Color.new(vecsum / ss2.to_f64)
+            else
+              img[y] << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+            end
+            now_time = Time.monotonic
+            ray_timer += now_time - last_time
+            last_time = now_time
+
+            if @do_progress && ray_timer >= Time::Span.new(seconds: 10)
+              ray_timer -= Time::Span.new(seconds: 10)
+              progress = (x + y * @camera.vw).to_f64 / (@camera.vw * @camera.vh)
+              @omegga.broadcast "[#{(progress * 100.0).round.to_i32}%] Cast #{@total_rays_cast.format} rays, #{(now_time - start_time).to_s} elapsed"
+            end
+          end
+        end
+        return img
+      {% end %}
     end
   end
 end
