@@ -1,3 +1,0 @@
-#!/bin/bash
-cd plugins/omegga-raytracer-cr
-shards build -q && ./bin/omegga-raytracer-cr
