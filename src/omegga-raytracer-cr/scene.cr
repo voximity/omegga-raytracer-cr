@@ -63,8 +63,6 @@ module Raytracer
     property supersampling : Int32 = 1
     property do_progress = true
 
-    getter total_rays_cast = 0
-
     @omegga : RPCClient
 
     def initialize(@omegga)
@@ -286,8 +284,6 @@ module Raytracer
     end
 
     def cast_ray(ray : Ray, objs : Array(SceneObject)) : NamedTuple(object: SceneObject, hit: Hit)?
-      @total_rays_cast += 1
-
       intersected = [] of NamedTuple(object: SceneObject, hit: Hit)
       objs.each do |obj|
         res = obj.intersection_with_ray(ray)
@@ -302,22 +298,25 @@ module Raytracer
       intersected.sort { |a, b| a[:hit].near <=> b[:hit].near }[0]
     end
 
-    def get_ray_color(ray : Ray, reflection_depth : Int32 = 0) : Color
+    # return a tuple of the color and number of rays cast to find this result
+    def get_ray_color(ray : Ray, reflection_depth : Int32 = 0) : Tuple(Color, Int32)
       hit = cast_ray(ray, @objects)
+      rays_cast = 1
 
       if hit.nil?
         begin
-          return @skybox.not_nil!.vec_to_color(ray.direction) unless @skybox.nil?
+          return {@skybox.not_nil!.vec_to_color(ray.direction), 1} unless @skybox.nil?
         rescue
-          @omegga.broadcast ray.direction.to_s
+          puts ray.direction.to_s
         end
-        return Color.new(0, 0, 0)
+
+        return {Color.new(0, 0, 0), 1}
       end
 
       mat = hit[:object].material
 
       # skip all lighting/reflection/refraction checks if the object is emissive
-      return mat.color if mat.emissive
+      return {mat.color, 1} if mat.emissive
 
       color = mat.color
 
@@ -334,7 +333,7 @@ module Raytracer
         end
 
         lcol = light.color.to_v3
-        shading = light.shading(ray, hit[:hit]) { |inc_ray| cast_ray(inc_ray, @objects) }
+        shading = light.shading(ray, hit[:hit]) { |inc_ray| rays_cast += 1; cast_ray(inc_ray, @objects) }
         
         # color from diffuse/specular
         diffuse = lcol * shading.diffuse
@@ -349,15 +348,17 @@ module Raytracer
       if mat.transparency > 0.1 && mat.reflectiveness < 0.1
         if !@do_refraction || reflection_depth >= @max_reflection_depth
           continuing = Ray.new(ray.point_along(hit[:hit].far + 0.01), ray.direction)
-          continuing_color = get_ray_color(continuing, reflection_depth)
-          color = color.lerp(continuing_color, mat.transparency)
+          continuing_color_tup = get_ray_color(continuing, reflection_depth)
+          rays_cast += continuing_color_tup[1]
+          color = color.lerp(continuing_color_tup[0], mat.transparency)
         else
           to_ior = 1.33
           from_ior = 1.0
           ray_out = Scene.refract(ray, hit[:hit], hit[:object], from_ior, to_ior)
           unless ray_out.nil?
             reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + (hit[:hit].normal * EPSILON), ray.direction - (hit[:hit].normal * (2 * ray.direction.dot(hit[:hit].normal))))
-            reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
+            reflection_hit_color_tup = get_ray_color(reflection_ray, reflection_depth + 1)
+            rays_cast += reflection_hit_color_tup[1]
 
             # calculate how much of both we want
             # 0 is full refraction
@@ -365,8 +366,9 @@ module Raytracer
             rr_amount = (-ray.direction).angle_between(hit[:hit].normal) / (Math::PI * 0.45)
             rr_amount = Scene.remap(rr_amount * rr_amount, 0.0, 1.0, 0.2, 1.0)
 
-            continuing_color = get_ray_color(ray_out, reflection_depth + 1)
-            mixed_color = continuing_color.lerp(reflection_hit_color, rr_amount.clamp(0.0, 1.0))
+            continuing_color_tup = get_ray_color(ray_out, reflection_depth + 1)
+            rays_cast += continuing_color_tup[1]
+            mixed_color = continuing_color_tup[0].lerp(reflection_hit_color_tup[0], rr_amount.clamp(0.0, 1.0))
             color = color.lerp(mixed_color, mat.transparency)
           end
         end
@@ -376,8 +378,9 @@ module Raytracer
       if reflection_depth < @max_reflection_depth && mat.reflectiveness > 0.1
         reflection_ray = Ray.new(ray.point_along(hit[:hit].near) + hit[:hit].normal * EPSILON, Scene.reflect(ray.direction, hit[:hit].normal))
         #Scene.fuzz_reflect(ray.direction, hit[:hit].normal, 0.1))
-        reflection_hit_color = get_ray_color(reflection_ray, reflection_depth + 1)
-        color = color.lerp(reflection_hit_color, mat.reflectiveness)
+        reflection_hit_color_tup = get_ray_color(reflection_ray, reflection_depth + 1)
+        rays_cast += reflection_hit_color_tup[1]
+        color = color.lerp(reflection_hit_color_tup[0], mat.reflectiveness)
       end
 
       # fog
@@ -386,20 +389,17 @@ module Raytracer
         color = color.lerp(fog_color, Math.min(1.0, fog_amount))
       end
 
-      color
+      {color, rays_cast}
     end
 
-    def render : Array(Array(Color))
-      @total_rays_cast = 0
-
-      ray_timer = Time::Span.new
-      last_time = Time.monotonic
+    def render : {image: Array(Array(Color)), rays: Int32}
       start_time = Time.monotonic
 
       {% if flag?("preview_mt") %}
         # figure out how many workers we have, and make each of them work on an even column of the image
         cores = (ENV["CRYSTAL_WORKERS"]? || "4").to_i32
         core_channels = [] of Channel(Array(Array(Color)))
+        core_progress_channels = [] of Channel(Tuple(Float64, Int32))
         cols_per_core = @camera.vw // cores
 
         sinv = 1.0 / supersampling
@@ -409,10 +409,19 @@ module Raytracer
           last_core = core == cores - 1
 
           core_channel = Channel(Array(Array(Color))).new
+          core_progress_channel = Channel(Tuple(Float64, Int32)).new
           core_channels << core_channel
+          core_progress_channels << core_progress_channel
 
-          spawn same_thread: false do
+          spawn name: "thread #{core}", same_thread: false do
             my_out = [] of Array(Color)
+            rays_cast = 0
+
+            ray_timer = Time::Span.new
+            last_time = Time.monotonic
+
+            x_range = ((core * cols_per_core)...(last_core ? camera.vw : (core + 1) * cols_per_core))
+            x_total = x_range.end - x_range.begin
 
             @camera.vh.times do |y|
               my_out << [] of Color
@@ -424,24 +433,61 @@ module Raytracer
                     ssy = (i // supersampling).to_f64 / supersampling
                     rgx = ((x + ssx)..(x + ssx + sinv))
                     rgy = ((y + ssy)..(y + ssy + sinv))
-                    sampled_colors << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+                    color_tup = get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+                    sampled_colors << color_tup[0]
+                    rays_cast += color_tup[1]
                   end
                   vecs = sampled_colors.map(&.to_v3)
                   vecsum = Vector3.new(0, 0, 0)
                   vecs.each { |vec| vecsum += vec }
                   my_out[y] << Color.new(vecsum / ss2.to_f64)
                 else
-                  my_out[y] << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+                  color_tup = get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+                  my_out[y] << color_tup[0]
+                  rays_cast += color_tup[1]
+                end
+
+                now_time = Time.monotonic
+                ray_timer += now_time - last_time
+                last_time = now_time
+
+                if @do_progress && ray_timer >= Time::Span.new(seconds: 10)
+                  ray_timer -= Time::Span.new(seconds: 10)
+                  progress = (x + y * x_total).to_f64 / (x_total * @camera.vh)
+                  core_progress_channel.send({progress, rays_cast})
                 end
               end
             end
 
+            core_progress_channel.send({0.0, rays_cast}) # send 0.0 when a core finishes its task
             core_channel.send my_out
           end
         end
 
         results = [] of Array(Array(Color))
         img = [] of Array(Color)
+
+        # a new fiber on the main thread to handle receiving core progress
+        core_progresses = Array(Tuple(Float64, Int32, Bool)).new(cores, {0.0, 0, false})
+
+        spawn name: "progress", same_thread: true do
+          loop do
+            cores.times do |core|
+              next if core_progresses[core][2]
+
+              prog = core_progress_channels[core].receive
+              if prog[0] == 0.0
+                # the core is done
+                core_progresses[core] = {1.0, prog[1], true}
+              else
+                core_progresses[core] = {prog[0], prog[1], false}
+              end
+            end
+            break if core_progresses.all? &.[](2)
+            @omegga.broadcast "Thread progresses: [#{core_progresses.map { |cp| "#{(cp[0] * 100.0).round.to_i32}%".br_colorize(:white) }.join ", "}]".br_colorize(:gray), notify: true
+            @omegga.broadcast "Rays cast: #{(core_progresses.map(&.[](1)).sum).format.br_colorize(:yellow)}, time elapsed: #{(Time.monotonic - start_time).to_s.br_colorize(:yellow)}".br_colorize(:gray), notify: true
+          end
+        end
 
         # get each result from each core
         cores.times do |core|
@@ -458,9 +504,12 @@ module Raytracer
           end
         end
 
-        return img
+        return {image: img, rays: core_progresses.map(&.[](1)).sum}
       {% else %}
         img = [] of Array(Color)
+        ray_timer = Time::Span.new
+        last_time = start_time
+        rays_cast = 0
         @camera.vh.times do |y|
           img << [] of Color
           @camera.vw.times do |x|
@@ -473,15 +522,20 @@ module Raytracer
                 ssy = (i // supersampling).to_f64 / supersampling
                 rgx = ((x + ssx)..(x + ssx + sinv))
                 rgy = ((y + ssy)..(y + ssy + sinv))
-                sampled_colors << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+                color_tup = get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(Scene.random_float(rgx), Scene.random_float(rgy))))
+                sampled_colors << color_tup[0]
+                rays_cast += color_tup[1]
               end
               vecs = sampled_colors.map(&.to_v3)
               vecsum = Vector3.new(0, 0, 0)
               vecs.each { |vec| vecsum += vec }
               img[y] << Color.new(vecsum / ss2.to_f64)
             else
-              img[y] << get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+              color_tup = get_ray_color(Ray.new(@camera.origin, @camera.direction_for_screen_point(x.to_f64, y.to_f64)))
+              img[y] << color_tup[0]
+              rays_cast += color_tup[1]
             end
+            
             now_time = Time.monotonic
             ray_timer += now_time - last_time
             last_time = now_time
@@ -489,11 +543,12 @@ module Raytracer
             if @do_progress && ray_timer >= Time::Span.new(seconds: 10)
               ray_timer -= Time::Span.new(seconds: 10)
               progress = (x + y * @camera.vw).to_f64 / (@camera.vw * @camera.vh)
-              @omegga.broadcast "[#{(progress * 100.0).round.to_i32}%] Cast #{@total_rays_cast.format} rays, #{(now_time - start_time).to_s} elapsed"
+              @omegga.broadcast "[#{(progress * 100.0).round.to_i32}%] Cast #{rays_cast.format} rays, #{(now_time - start_time).to_s} elapsed"
             end
           end
         end
-        return img
+
+        return {image: img, rays: rays_cast}
       {% end %}
     end
   end

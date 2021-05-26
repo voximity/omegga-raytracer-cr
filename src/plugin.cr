@@ -207,7 +207,8 @@ omegga.on_chat_command "trace" do |user, args|
     scene.populate_scene save
 
     omegga.broadcast "#{"[3/4]".br_colorize(:gray)} Scene populated. Rendering..."
-    img = scene.render
+    img_tup = scene.render
+    img = img_tup[:image]
 
     if to_bricks
       # render out to bricks
@@ -234,7 +235,7 @@ omegga.on_chat_command "trace" do |user, args|
       StumpyPNG.write(canvas, "raytrace.png")
     end
 
-    total_rays = scene.total_rays_cast
+    total_rays = img_tup[:rays]
   end
 
   omegga.broadcast "Operation complete in #{elapsed.to_s.br_colorize(:yellow)} for image #{"#{width}x#{height}".br_colorize(:yellow)}. Cast #{total_rays.format.br_colorize(:cyan)} rays."

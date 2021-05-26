@@ -2,7 +2,7 @@ version: 2.0
 shards:
   omegga-cr:
     git: https://github.com/voximity/omegga-cr.git
-    version: 0.1.0+git.commit.cb6186f904429e30d65833a5ddcbee7050307317
+    version: 0.1.0+git.commit.f18684fd8ae0686deecb40a2e1fa543ce32effe9
 
   open-simplex-noise:
     git: https://github.com/j8r/crystal-open-simplex-noise.git
