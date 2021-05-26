@@ -425,7 +425,7 @@ module Raytracer
 
             @camera.vh.times do |y|
               my_out << [] of Color
-              ((core * cols_per_core)...(last_core ? @camera.vw : (core + 1) * cols_per_core)).each do |x|
+              (core...@camera.vw).step(by: cores) do |x|
                 if supersampling > 1
                   sampled_colors = [] of Color
                   ss2.times do |i|
@@ -497,10 +497,8 @@ module Raytracer
         # aggregate it into the final image
         @camera.vh.times do |y|
           img << [] of Color
-          cores.times do |c|
-            results[c][y].each do |xc|
-              img[y] << xc
-            end
+          @camera.vw.times do |x|
+            img[y] << results[x % cores][y][x // cores]
           end
         end
 
