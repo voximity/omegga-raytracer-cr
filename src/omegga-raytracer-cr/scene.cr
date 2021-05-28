@@ -62,6 +62,7 @@ module Raytracer
     property do_sun = true
     property supersampling : Int32 = 1
     property do_progress = true
+    property area_lights = false
 
     @omegga : RPCClient
 
@@ -206,7 +207,7 @@ module Raytracer
           color = lcomp["bUseBrickColor"].as(Bool) ? color : Color.new(color_raw[0], color_raw[1], color_raw[2])
           intensity = lcomp["Brightness"].as(Int32 | Float64).to_f64 / 100.0
 
-          if lcomp["bMatchBrickShape"].as(Bool)
+          if lcomp["bMatchBrickShape"].as(Bool) && @area_lights
             # area light
             @lights << AreaLight.new(pos, size, color, intensity, accuracy: 4)
           else
@@ -261,13 +262,9 @@ module Raytracer
           }
         end
 
-        player_colors = [
-
-        ] of Color
-
         player_posns.each do |plr_pos|
           pos = plr_pos[:position]
-          next if (@camera.origin - pos).magnitude <= 1.0
+          next if (@camera.origin - pos).magnitude <= 20.0
           current_transform = transforms.min_by { |tup| (pos - Vector3.new(tup[:x], tup[:y], tup[:z])).magnitude }
 
           obj = MeshObject.new(

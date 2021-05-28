@@ -57,20 +57,29 @@ config_options << ConfigOption(Bool).new("Ground Plane", ["groundplane", "render
 config_options << ConfigOption(Bool).new("Ground Plane Texture", ["groundplanetexture", "ground_plane_texture"],
   true, "Whether or not to render the ground plane texture.") { |scene, gpt| scene.stud_texture = gpt }
 config_options << ConfigOption(Bool).new("Players", ["players", "renderplayers", "render_players"], false, "Whether or not to render players.") { |scene, rp| scene.render_players = rp }
+config_options << ConfigOption(Bool).new("Area Lights", ["arealights", "area_lights"], false, "Whether or not lights with bMatchBrickShape should be area lights.") { |scene, al| scene.area_lights = al }
+
 #config_options << ConfigOption(String).new("Skybox", ["skybox", "sky"], "skybox.png", "The image name of the skybox to use.") { |scene, sb| scene.skybox = Raytracer::Skybox.new(sb) }
 
 omegga = RPCClient.new
 skybox = Raytracer::Skybox.new("assets/skybox.png")
 authorized_users = [] of String
 
-def yaw_of(user : String, omegga : RPCClient)
+def transform_of(user : String, omegga : RPCClient)
   omegga.writeln "Chat.Command /GetTransform #{user}"
 
   watcher = Log::Watcher.new(/Transform: X=(-?[0-9,.]+) Y=(-?[0-9,.]+) Z=(-?[0-9,.]+) Roll=(-?[0-9,.]+) Pitch=(-?[0-9,.]+) Yaw=(-?[0-9,.]+)/, timeout: 1.second)
   omegga.wrangler.watchers << watcher
   match = watcher.receive(omegga.wrangler)
 
-  match[6].tr(",", "").to_f64
+  {
+    x: match[1].tr(",", "").to_f64,
+    y: match[2].tr(",", "").to_f64,
+    z: match[3].tr(",", "").to_f64,
+    roll: match[4].tr(",", "").to_f64,
+    pitch: match[5].tr(",", "").to_f64,
+    yaw: match[6].tr(",", "").to_f64
+  }
 end
 
 omegga.on_init do |conf|
@@ -161,19 +170,47 @@ omegga.on_chat_command "set" do |user, args|
   omegga.broadcast "Set option #{option.name.br_colorize(:yellow)} to #{option.value.to_s.br_colorize(:cyan)}."
 end
 
+omegga.on_chat_command "clear" do |user|
+  next unless authorized_users.includes?(user)
+
+  omegga.clear_bricks(Raytracer::BUILD_USER.id.to_s, quiet: false)
+end
+
+last_trace : NamedTuple(yaw: Float64, pitch: Float64, pos: Vector3, to_bricks: Bool)? = nil
+
 omegga.on_chat_command "trace" do |user, args|
   next unless authorized_users.includes?(user)
 
-  yaw = yaw_of(user, omegga)
-  pitch = 0.0
+  yaw : Float64
+  pitch : Float64
+  pos : Vector3
+  to_bricks : Bool
 
-  to_bricks = true
+  if args[0]? == "again"
+    if last_trace.nil?
+      omegga.broadcast "Please trace once to retrace from its position.".br_colorize(:red)
+      next
+    end
 
-  if args.size >= 1
-    pitch = args[0].to_f64? || yaw
+    yaw = last_trace.not_nil![:yaw]
+    pitch = last_trace.not_nil![:pitch]
+    pos = last_trace.not_nil![:pos]
+    to_bricks = last_trace.not_nil![:to_bricks]
+
+    omegga.broadcast "Using previous position for trace.".br_colorize(:gray)
+  else
+    transform = transform_of(user, omegga)
+
+    yaw = transform[:yaw]
+    pitch = 0.0
+    pos = Vector3.new(transform[:x], transform[:y], transform[:z])
+    to_bricks = true
+
+    pitch = args[0].to_f64? || 0.0 if args.size >= 1
+    to_bricks = args[1] != "img" if args.size >= 2
+
+    last_trace = {yaw: yaw, pitch: pitch, pos: pos, to_bricks: to_bricks}
   end
-
-  to_bricks = args[1] != "img" if args.size >= 2
 
   width = config_options[0].as(ConfigOption(Int32)).value
   height = config_options[1].as(ConfigOption(Int32)).value
@@ -182,7 +219,7 @@ omegga.on_chat_command "trace" do |user, args|
   elapsed = Time.measure do
     omegga.broadcast "#{"[1/4]".br_colorize(:gray)} Reading bricks..."
     save = omegga.get_save_data
-    pos = omegga.get_player_position(user)
+    pos += Vector3.new(0, 0, 15) # eye pos roughly?
     scene = Raytracer::Scene.new(omegga)
     scene.camera.yaw = yaw * Math::PI / 180.0
     scene.camera.pitch = pitch * Math::PI / 180.0
@@ -221,6 +258,7 @@ omegga.on_chat_command "trace" do |user, args|
       new_save = BRS::Save.new
       new_save.bricks = bricks
       new_save.brick_assets = ["PB_DefaultMicroBrick"]
+      new_save.brick_owners = [Raytracer::BUILD_USER]
       omegga.load_save_data(new_save, quiet: false)
     else
       # write to file
